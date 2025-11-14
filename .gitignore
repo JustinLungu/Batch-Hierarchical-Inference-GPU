@@ -1,0 +1,8 @@
+# Ignore following files and folders
+__pycache__/
+config/.env
+data/
+results/
+results_analysis/
+scripts_analysis/
+scripts_results_cleaning/

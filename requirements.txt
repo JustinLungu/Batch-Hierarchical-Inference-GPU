@@ -1,0 +1,10 @@
+fastapi
+numpy
+pandas
+Pillow
+Requests
+torch
+torchvision
+uvicorn
+python-multipart
+dotenv
