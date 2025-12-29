@@ -1,4 +1,4 @@
-# Hierarchical Inference Framework (HI-Framework)
+# Batch Hierarchical Inference Framework (Batch HI-Framework)
 
 This repository contains the code and documentation for a two-layer Hierarchical Inference (HI) framework. The framework facilitates the development, testing, and deployment of inference tasks split between a resource-constrained edge device and a more powerful edge server.
 
