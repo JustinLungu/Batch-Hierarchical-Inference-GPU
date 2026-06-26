@@ -11,30 +11,8 @@ import requests
 from PIL import Image, UnidentifiedImageError
 from torchvision import datasets
 
-from constants import (
-    ANALYSIS_DIRNAME,
-    CONFIG_FILE,
-    EDGE_DEVICE_RESULTS_FILENAME,
-    EDGE_DEVICE_SCRIPT,
-    EDGE_SERVER_SCRIPT,
-    REPO_ROOT,
-    SMOKE_LOG_DIR,
-    SUMMARY_FILENAME,
-    TIMING_COLUMNS,
-    TIMING_DURATIONS,
-    TIMING_OUTPUT_COLUMNS,
-    TIMING_RESULTS_FILENAME,
-)
-from utils import (
-    format_mean_seconds,
-    format_median_seconds,
-    load_env_file,
-    require_config,
-    require_config_bool,
-    seconds_between,
-    start_process,
-    wait_for_server,
-)
+from constants import *
+from utils import *
 
 
 class LocalSmokeTest:
@@ -62,18 +40,15 @@ class LocalSmokeTest:
 
     def run(self) -> int:
         try:
-            self.start_services()
-            self.send_config()
-            self.send_samples()
+            self._start_services()
+            self._send_config()
+            self._send_samples()
             print(f"Raw results saved by edge device: {self.raw_results_csv}")
-            print("Analyzing results...")
-            self.post_process_results()
-            return 0
         finally:
-            self.stop_services()
+            self._stop_services()
 
-    def start_services(self) -> None:
-        env = self.service_env()
+    def _start_services(self) -> None:
+        env = self._service_env()
         python = sys.executable
 
         print("Starting edge server...")
@@ -96,7 +71,7 @@ class LocalSmokeTest:
         )
         wait_for_server(self.edge_device_url)
 
-    def service_env(self) -> dict[str, str]:
+    def _service_env(self) -> dict[str, str]:
         env = os.environ.copy()
         env["DEVICE"] = self.device
         env["EDGE_SERVER_IP"] = self.edge_server_host
@@ -104,9 +79,9 @@ class LocalSmokeTest:
         env["EDGE_SERVER_PORT"] = self.edge_server_port
         return env
 
-    def send_config(self) -> None:
+    def _send_config(self) -> None:
         print("Sending configuration...")
-        experiment_config = self.experiment_config()
+        experiment_config = self._experiment_config()
         server_response = requests.post(
             f"{self.edge_server_url}/config", json=experiment_config, timeout=120
         )
@@ -116,7 +91,7 @@ class LocalSmokeTest:
         server_response.raise_for_status()
         device_response.raise_for_status()
 
-    def experiment_config(self) -> dict:
+    def _experiment_config(self) -> dict:
         return {
             "sample_path": require_config(self.config, "SAMPLE_PATH"),
             "sml_model": require_config(self.config, "SML_MODEL"),
@@ -131,10 +106,10 @@ class LocalSmokeTest:
             "controller_batch_size": self.controller_batch_size,
         }
 
-    def send_samples(self) -> None:
-        experiment_config = self.experiment_config()
+    def _send_samples(self) -> None:
+        experiment_config = self._experiment_config()
         print(f"Sending {self.controller_batch_size} samples to edge device...")
-        files, metadata = self.collect_image_batch(
+        files, metadata = self._collect_image_batch(
             experiment_config["sample_path"], self.controller_batch_size
         )
         response = requests.post(
@@ -149,7 +124,7 @@ class LocalSmokeTest:
         response.raise_for_status()
         print(f"Edge device returned {len(response.json())} result rows.")
 
-    def collect_image_batch(self, sample_path: str, batch_size: int) -> tuple[list, list[dict]]:
+    def _collect_image_batch(self, sample_path: str, batch_size: int) -> tuple[list, list[dict]]:
         dataset = datasets.ImageFolder(sample_path)
         files = []
         metadata = []
@@ -157,7 +132,7 @@ class LocalSmokeTest:
         for image_path, class_index in dataset.imgs:
             if len(files) >= batch_size:
                 break
-            if not self.is_valid_image(image_path):
+            if not self._is_valid_image(image_path):
                 continue
 
             image_name = os.path.basename(image_path)
@@ -178,7 +153,7 @@ class LocalSmokeTest:
             )
         return files, metadata
 
-    def is_valid_image(self, image_path: str) -> bool:
+    def _is_valid_image(self, image_path: str) -> bool:
         mime_type, _ = mimetypes.guess_type(image_path)
         if not mime_type or not mime_type.startswith("image/"):
             return False
@@ -192,25 +167,25 @@ class LocalSmokeTest:
 
     def post_process_results(self) -> None:
         self.analysis_dir.mkdir(parents=True, exist_ok=True)
-        raw_results = self.load_raw_results()
-        timing_results = self.add_timing_durations(raw_results)
+        raw_results = self._load_raw_results()
+        timing_results = self._add_timing_durations(raw_results)
 
-        self.write_timing_csv(timing_results)
-        summary = self.build_summary(timing_results)
+        self._write_timing_csv(timing_results)
+        summary = self._build_summary(timing_results)
         self.summary_md.write_text(summary)
 
         print(summary)
         print(f"Wrote timing CSV: {self.timing_results_csv}")
         print(f"Wrote summary: {self.summary_md}")
 
-    def load_raw_results(self) -> pd.DataFrame:
+    def _load_raw_results(self) -> pd.DataFrame:
         results = pd.read_csv(self.raw_results_csv)
         for column in TIMING_COLUMNS:
             if column in results.columns:
                 results[column] = pd.to_numeric(results[column], errors="coerce")
         return results
 
-    def add_timing_durations(self, results: pd.DataFrame) -> pd.DataFrame:
+    def _add_timing_durations(self, results: pd.DataFrame) -> pd.DataFrame:
         timing = results.copy()
         for output_column, (end_column, start_column) in TIMING_DURATIONS.items():
             timing[output_column] = seconds_between(timing, end_column, start_column)
@@ -230,7 +205,7 @@ class LocalSmokeTest:
 
         return timing
 
-    def write_timing_csv(self, timing: pd.DataFrame) -> None:
+    def _write_timing_csv(self, timing: pd.DataFrame) -> None:
         available_columns = [column for column in TIMING_OUTPUT_COLUMNS if column in timing.columns]
         output = timing[available_columns].copy()
 
@@ -247,7 +222,7 @@ class LocalSmokeTest:
 
         output.to_csv(self.timing_results_csv, index=False)
 
-    def build_summary(self, timing: pd.DataFrame) -> str:
+    def _build_summary(self, timing: pd.DataFrame) -> str:
         lines = [f"Rows: {len(timing)}"]
 
         if "Offloaded" in timing.columns:
@@ -276,13 +251,13 @@ class LocalSmokeTest:
         lines.append(f"LML inference mean: {format_mean_seconds(timing['lml_inference_s'])}")
         lines.append(f"Offload roundtrip: {format_mean_seconds(timing['offload_roundtrip_s'])}")
 
-        throughput = self.approx_throughput(timing)
+        throughput = self._approx_throughput(timing)
         if throughput is not None:
             lines.append(f"Approx throughput: ~{throughput:.2f} samples/s")
 
         return "\n".join(lines) + "\n"
 
-    def approx_throughput(self, timing: pd.DataFrame) -> float | None:
+    def _approx_throughput(self, timing: pd.DataFrame) -> float | None:
         start = pd.to_numeric(timing["ts_sml_inference_start"], errors="coerce").min()
         end_candidates = timing["ts_results_received_from_offloading_module"].fillna(
             timing.get("ts_results_saved_not_offloaded")
@@ -292,7 +267,7 @@ class LocalSmokeTest:
             return None
         return len(timing) / (end - start)
 
-    def stop_services(self) -> None:
+    def _stop_services(self) -> None:
         for process in reversed(self.processes):
             process.terminate()
         for process in reversed(self.processes):
@@ -303,7 +278,10 @@ class LocalSmokeTest:
 
 
 def main() -> int:
-    return LocalSmokeTest().run()
+    smoke_test = LocalSmokeTest()
+    smoke_test.run()
+    smoke_test.post_process_results()
+    return 0
 
 
 if __name__ == "__main__":
