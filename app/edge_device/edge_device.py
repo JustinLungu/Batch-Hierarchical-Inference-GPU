@@ -16,7 +16,7 @@ from fastapi.responses import PlainTextResponse, FileResponse
 from fastapi import FastAPI, UploadFile, File, Form
 from torchvision.transforms import InterpolationMode
 from offloading_decision_maker import make_offloading_decision, adaptive_threshold_model
-from sample_offloading_method import offload_sample_method, send_batch_to_server
+from sample_offloading_method import offload_sample_method, send_batch_to_server, flush_size_buffer
 
 # Load environment variables
 load_dotenv()
@@ -142,6 +142,7 @@ async def update_batch_results(batch_results, ts_sample_sent_to_edge_server, ts_
             entry["ts_results_received_from_edge_server"] = ts_results_received_from_edge_server
             entry["ts_results_received_from_offloading_module"] = time.time()
             entry["Offloaded"] = True
+            entry["Buffered"] = False
             
             # Adaptive threshold update feedback loop
             if cached_config.get("decision_method") == "adaptive_threshold":
@@ -184,6 +185,19 @@ def load_model(checkpoint_path):
 
     return model
 
+# Function: Resolve compute device from environment
+def resolve_device():
+    requested_device = os.getenv("DEVICE", "auto").strip().lower()
+    if requested_device == "auto":
+        return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    if requested_device == "cpu":
+        return torch.device("cpu")
+    if requested_device == "cuda":
+        if not torch.cuda.is_available():
+            raise RuntimeError("DEVICE=cuda was requested, but CUDA is not available.")
+        return torch.device("cuda")
+    raise ValueError("DEVICE must be one of: auto, cpu, cuda")
+
 # Initialize: Global variables
 config = {}
 sml_model = None
@@ -191,7 +205,7 @@ cached_config = {}
 results = {}
 
 # Initialize: Device configuration
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+device = resolve_device()
 
 # Initialize: Logging
 logger = configure_logging()
@@ -249,7 +263,11 @@ async def update_config(new_config: dict):
 
 # Endpoint: Inference samples
 @app.post("/predict")
-async def predict(files: List[UploadFile] = File(...), metadata: str = Form(...)):
+async def predict(
+    files: List[UploadFile] = File(...),
+    metadata: str = Form(...),
+    flush_final_batch: bool = Form(False),
+):
     global sml_model
     if sml_model is None:
         logger.error("Model not loaded. Configuration missing...")
@@ -391,6 +409,15 @@ async def predict(files: List[UploadFile] = File(...), metadata: str = Form(...)
                 results[uid]["Buffered"] = False
         else:
             results[sample_uuid]["Buffered"] = True
+
+    # If fixed size-based batching leaves a final partial batch, send it only
+    # when the caller explicitly says this request is the end of the input.
+    if offloading_strategy == "size_based_batching" and flush_final_batch:
+        offload_result = flush_size_buffer(edge_server_predict_url)
+        if offload_result is not None:
+            result, ts_sent, ts_recv = offload_result
+            batch_results = result if isinstance(result, list) else [result]
+            await update_batch_results(batch_results, ts_sent, ts_recv)
 
     response_payload = []
     for uid in processed_uuids:

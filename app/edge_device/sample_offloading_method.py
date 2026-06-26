@@ -40,6 +40,14 @@ def flush_dynamic_buffer(edge_server_url):
         return send_batch_to_server(batch, edge_server_url)
     return None
 
+# Function: Flush size-based batching buffer
+def flush_size_buffer(edge_server_url):
+    if hasattr(offload_sample_method, "batch_buffer_size") and offload_sample_method.batch_buffer_size:
+        batch = offload_sample_method.batch_buffer_size
+        offload_sample_method.batch_buffer_size = []
+        return send_batch_to_server(batch, edge_server_url)
+    return None
+
 # ---- Main Function ----
 def offload_sample_method(file, offloading_strategy, edge_server_url, batch_size, batch_wait_time):
     def send_batch(batch):

@@ -113,13 +113,26 @@ def load_model(checkpoint_path):
 
     return model
 
+# Function: Resolve compute device from environment
+def resolve_device():
+    requested_device = os.getenv("DEVICE", "auto").strip().lower()
+    if requested_device == "auto":
+        return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    if requested_device == "cpu":
+        return torch.device("cpu")
+    if requested_device == "cuda":
+        if not torch.cuda.is_available():
+            raise RuntimeError("DEVICE=cuda was requested, but CUDA is not available.")
+        return torch.device("cuda")
+    raise ValueError("DEVICE must be one of: auto, cpu, cuda")
+
 # Initialize: Global variables
 config = {}
 lml_model = None
 cached_config = {}
 
 # Initialize: Device configuration
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+device = resolve_device()
 
 # Initialize: Logging
 logger = configure_logging()
