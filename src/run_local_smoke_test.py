@@ -178,13 +178,7 @@ def main() -> int:
         payload = response.json()
 
         print(json.dumps(payload, indent=2))
-
-        results_response = requests.get(f"{edge_device_url}/results", timeout=30)
-        if results_response.status_code == 200:
-            Path("results/Full_results.csv").write_bytes(results_response.content)
-            print("Saved results/Full_results.csv")
-        else:
-            print(f"No results CSV available yet: HTTP {results_response.status_code}")
+        print("Raw results saved by edge device: results/EdgeDevice_results.csv")
 
         return 0
     finally:

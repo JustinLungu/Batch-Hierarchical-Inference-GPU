@@ -33,8 +33,8 @@ Then it sends one configured sample batch through:
 controller utility -> edge_device.py -> edge_server.py
 ```
 
-It reads defaults from `config/experiment.env` and writes the downloaded result
-CSV to `results/Full_results.csv`.
+It reads defaults from `config/experiment.env`. The edge-device service writes
+raw results to `results/EdgeDevice_results.csv`.
 
 For this local utility:
 
@@ -42,3 +42,21 @@ For this local utility:
 - `BATCH_SIZE` is how many offloaded images the edge device sends to the edge server.
 - `FLUSH_FINAL_BATCH=true` sends any final partial edge-server batch at the end
   of the request.
+
+## Results Analysis
+
+Summarize a result CSV into derived timings and a readable markdown report:
+
+```bash
+python src/analyze_results.py
+```
+
+Outputs:
+
+```text
+results/analysis/timing_results.csv
+results/analysis/summary.md
+```
+
+The analyzer expects `results/EdgeDevice_results.csv` and writes into
+`results/analysis/`.
