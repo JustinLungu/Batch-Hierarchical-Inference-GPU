@@ -1,0 +1,21 @@
+[project]
+name = "batch-hierarchical-inference-gpu"
+version = "0.1.0"
+description = "Batch hierarchical inference experiments for edge-device and edge-server model offloading."
+readme = "README.md"
+requires-python = ">=3.10,<3.13"
+dependencies = [
+    "fastapi",
+    "numpy",
+    "pandas",
+    "pillow",
+    "python-dotenv",
+    "python-multipart",
+    "requests",
+    "torch",
+    "torchvision",
+    "uvicorn",
+]
+
+[tool.uv]
+package = false
