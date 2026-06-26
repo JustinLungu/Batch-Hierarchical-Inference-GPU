@@ -1,10 +1,10 @@
-# Local Setup Scripts
+# Shell Scripts
 
-These scripts prepare the local Python-script workflow:
+This folder contains shell helpers for preparing local experiments:
 
-```text
-controller -> edge_device.py -> edge_server.py
-```
+- `setup_env.sh` syncs the uv environment from `pyproject.toml`.
+- `download_dataset.sh` downloads the configured local dataset.
+- `download_models.sh` downloads configured torchvision checkpoints.
 
 They read defaults from `config/experiment.env`. You can override that file per
 command:
