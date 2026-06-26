@@ -3,192 +3,307 @@ import mimetypes
 import os
 import subprocess
 import sys
-import time
 import uuid
 from pathlib import Path
 
+import pandas as pd
 import requests
 from PIL import Image, UnidentifiedImageError
 from torchvision import datasets
 
+from constants import (
+    ANALYSIS_DIRNAME,
+    CONFIG_FILE,
+    EDGE_DEVICE_RESULTS_FILENAME,
+    EDGE_DEVICE_SCRIPT,
+    EDGE_SERVER_SCRIPT,
+    REPO_ROOT,
+    SMOKE_LOG_DIR,
+    SUMMARY_FILENAME,
+    TIMING_COLUMNS,
+    TIMING_DURATIONS,
+    TIMING_OUTPUT_COLUMNS,
+    TIMING_RESULTS_FILENAME,
+)
+from utils import (
+    format_mean_seconds,
+    format_median_seconds,
+    load_env_file,
+    require_config,
+    require_config_bool,
+    seconds_between,
+    start_process,
+    wait_for_server,
+)
 
-def load_env_file(path: Path) -> dict[str, str]:
-    values = {}
-    if not path.exists():
-        return values
 
-    for raw_line in path.read_text().splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, value = line.split("=", 1)
-        values[key.strip()] = value.strip().strip("\"'")
-    return values
+class LocalSmokeTest:
+    def __init__(self):
+        os.chdir(REPO_ROOT)
+        self.config = load_env_file(CONFIG_FILE)
+        self.edge_device_host = require_config(self.config, "EDGE_DEVICE_IP")
+        self.edge_server_host = require_config(self.config, "EDGE_SERVER_IP")
+        self.edge_device_port = require_config(self.config, "EDGE_DEVICE_PORT")
+        self.edge_server_port = require_config(self.config, "EDGE_SERVER_PORT")
+        self.edge_device_url = f"http://{self.edge_device_host}:{self.edge_device_port}"
+        self.edge_server_url = f"http://{self.edge_server_host}:{self.edge_server_port}"
 
+        results_dir = Path(require_config(self.config, "RESULTS_DIR"))
+        self.raw_results_csv = results_dir / EDGE_DEVICE_RESULTS_FILENAME
+        self.analysis_dir = results_dir / ANALYSIS_DIRNAME
+        self.timing_results_csv = self.analysis_dir / TIMING_RESULTS_FILENAME
+        self.summary_md = self.analysis_dir / SUMMARY_FILENAME
 
-def config_value(config: dict[str, str], key: str, default: str) -> str:
-    return os.environ.get(key, config.get(key, default))
+        self.batch_size = int(require_config(self.config, "BATCH_SIZE"))
+        self.controller_batch_size = int(require_config(self.config, "CONTROLLER_BATCH_SIZE"))
+        self.device = require_config(self.config, "DEVICE")
+        self.flush_final_batch = require_config_bool(self.config, "FLUSH_FINAL_BATCH")
+        self.processes: list[subprocess.Popen] = []
 
-
-def config_bool(config: dict[str, str], key: str, default: bool) -> bool:
-    value = config_value(config, key, str(default)).strip().lower()
-    return value in {"1", "true", "yes", "y", "on"}
-
-
-def wait_for_server(url: str, timeout: float = 60.0) -> None:
-    deadline = time.time() + timeout
-    while time.time() < deadline:
+    def run(self) -> int:
         try:
-            response = requests.get(f"{url}/docs", timeout=1)
-            if response.status_code == 200:
-                return
-        except requests.RequestException:
-            time.sleep(1)
-    raise RuntimeError(f"Server did not become ready: {url}")
+            self.start_services()
+            self.send_config()
+            self.send_samples()
+            print(f"Raw results saved by edge device: {self.raw_results_csv}")
+            print("Analyzing results...")
+            self.post_process_results()
+            return 0
+        finally:
+            self.stop_services()
 
+    def start_services(self) -> None:
+        env = self.service_env()
+        python = sys.executable
 
-def start_process(command: list[str], log_path: Path, env: dict[str, str]) -> subprocess.Popen:
-    log_path.parent.mkdir(parents=True, exist_ok=True)
-    log_file = log_path.open("w")
-    return subprocess.Popen(command, stdout=log_file, stderr=subprocess.STDOUT, env=env)
-
-
-def collect_image_batch(sample_path: str, batch_size: int) -> tuple[list, list[dict]]:
-    dataset = datasets.ImageFolder(sample_path)
-    files = []
-    metadata = []
-
-    for image_path, class_index in dataset.imgs:
-        if len(files) >= batch_size:
-            break
-
-        image_name = os.path.basename(image_path)
-        try:
-            with Image.open(image_path) as img:
-                img.verify()
-        except (UnidentifiedImageError, OSError):
-            continue
-
-        mime_type, _ = mimetypes.guess_type(image_path)
-        if not mime_type or not mime_type.startswith("image/"):
-            continue
-
-        with open(image_path, "rb") as image_file:
-            files.append(("files", (image_name, image_file.read(), mime_type)))
-
-        metadata.append(
-            {
-                "UUID": str(uuid.uuid4()),
-                "Filename": image_name,
-                "True Class": class_index,
-            }
-        )
-
-    if len(files) < batch_size:
-        raise RuntimeError(
-            f"Only found {len(files)} valid images in {sample_path}; need {batch_size}."
-        )
-
-    return files, metadata
-
-
-def main() -> int:
-    repo_root = Path(__file__).resolve().parents[1]
-    os.chdir(repo_root)
-
-    config = load_env_file(Path(os.environ.get("CONFIG_FILE", "config/experiment.env")))
-
-    edge_device_port = config_value(config, "EDGE_DEVICE_PORT", "8000")
-    edge_server_port = config_value(config, "EDGE_SERVER_PORT", "8001")
-    edge_device_url = f"http://127.0.0.1:{edge_device_port}"
-    edge_server_url = f"http://127.0.0.1:{edge_server_port}"
-
-    batch_size = int(config_value(config, "BATCH_SIZE", "2"))
-    controller_batch_size = int(config_value(config, "CONTROLLER_BATCH_SIZE", str(batch_size)))
-    flush_final_batch = config_bool(config, "FLUSH_FINAL_BATCH", True)
-
-    experiment_config = {
-        "sample_path": config_value(config, "SAMPLE_PATH", "data/datasets/imagenette2-160/val"),
-        "sml_model": config_value(config, "SML_MODEL", "data/models/sml/mobilenet_v3_large_imagenet1k_v2.pth"),
-        "sml_architecture": config_value(config, "SML_ARCH", "mobilenet_v3_large"),
-        "lml_model": config_value(config, "LML_MODEL", "data/models/lml/Wide_ResNet50_2_Weights_IMAGENET1K_V2.pth"),
-        "lml_architecture": config_value(config, "LML_ARCH", "wide_resnet50_2"),
-        "decision_method": config_value(config, "DECISION_METHOD", "always_offload"),
-        "fixed_threshold_value": float(config_value(config, "FIXED_THRESHOLD_VALUE", "0.7")),
-        "offloading_strategy": config_value(config, "OFFLOADING_STRATEGY", "size_based_batching"),
-        "batch_size": batch_size,
-        "batch_wait_time": float(config_value(config, "BATCH_WAIT_TIME", "3.0")),
-        "controller_batch_size": controller_batch_size,
-    }
-
-    env = os.environ.copy()
-    env["DEVICE"] = config_value(config, "DEVICE", "auto")
-    env["EDGE_SERVER_IP"] = "127.0.0.1"
-    env["EDGE_DEVICE_PORT"] = edge_device_port
-    env["EDGE_SERVER_PORT"] = edge_server_port
-
-    python = sys.executable
-    processes: list[subprocess.Popen] = []
-
-    try:
         print("Starting edge server...")
-        processes.append(
+        self.processes.append(
             start_process(
-                [python, "app/edge_server/edge_server.py"],
-                Path("/tmp/bhi-local-smoke/edge_server_stdout.log"),
+                [python, str(EDGE_SERVER_SCRIPT)],
+                SMOKE_LOG_DIR / "edge_server_stdout.log",
                 env,
             )
         )
-        wait_for_server(edge_server_url)
+        wait_for_server(self.edge_server_url)
 
         print("Starting edge device...")
-        processes.append(
+        self.processes.append(
             start_process(
-                [python, "app/edge_device/edge_device.py"],
-                Path("/tmp/bhi-local-smoke/edge_device_stdout.log"),
+                [python, str(EDGE_DEVICE_SCRIPT)],
+                SMOKE_LOG_DIR / "edge_device_stdout.log",
                 env,
             )
         )
-        wait_for_server(edge_device_url)
+        wait_for_server(self.edge_device_url)
 
+    def service_env(self) -> dict[str, str]:
+        env = os.environ.copy()
+        env["DEVICE"] = self.device
+        env["EDGE_SERVER_IP"] = self.edge_server_host
+        env["EDGE_DEVICE_PORT"] = self.edge_device_port
+        env["EDGE_SERVER_PORT"] = self.edge_server_port
+        return env
+
+    def send_config(self) -> None:
         print("Sending configuration...")
+        experiment_config = self.experiment_config()
         server_response = requests.post(
-            f"{edge_server_url}/config", json=experiment_config, timeout=120
+            f"{self.edge_server_url}/config", json=experiment_config, timeout=120
         )
         device_response = requests.post(
-            f"{edge_device_url}/config", json=experiment_config, timeout=120
+            f"{self.edge_device_url}/config", json=experiment_config, timeout=120
         )
         server_response.raise_for_status()
         device_response.raise_for_status()
 
-        print(f"Sending {controller_batch_size} samples to edge device...")
-        files, metadata = collect_image_batch(
-            experiment_config["sample_path"], controller_batch_size
+    def experiment_config(self) -> dict:
+        return {
+            "sample_path": require_config(self.config, "SAMPLE_PATH"),
+            "sml_model": require_config(self.config, "SML_MODEL"),
+            "sml_architecture": require_config(self.config, "SML_ARCH"),
+            "lml_model": require_config(self.config, "LML_MODEL"),
+            "lml_architecture": require_config(self.config, "LML_ARCH"),
+            "decision_method": require_config(self.config, "DECISION_METHOD"),
+            "fixed_threshold_value": float(require_config(self.config, "FIXED_THRESHOLD_VALUE")),
+            "offloading_strategy": require_config(self.config, "OFFLOADING_STRATEGY"),
+            "batch_size": self.batch_size,
+            "batch_wait_time": float(require_config(self.config, "BATCH_WAIT_TIME")),
+            "controller_batch_size": self.controller_batch_size,
+        }
+
+    def send_samples(self) -> None:
+        experiment_config = self.experiment_config()
+        print(f"Sending {self.controller_batch_size} samples to edge device...")
+        files, metadata = self.collect_image_batch(
+            experiment_config["sample_path"], self.controller_batch_size
         )
         response = requests.post(
-            f"{edge_device_url}/predict",
+            f"{self.edge_device_url}/predict",
             files=files,
             data={
                 "metadata": json.dumps(metadata),
-                "flush_final_batch": str(flush_final_batch).lower(),
+                "flush_final_batch": str(self.flush_final_batch).lower(),
             },
-            timeout=max(120, controller_batch_size * 60),
+            timeout=max(120, self.controller_batch_size * 60),
         )
         response.raise_for_status()
-        payload = response.json()
+        print(f"Edge device returned {len(response.json())} result rows.")
 
-        print(json.dumps(payload, indent=2))
-        print("Raw results saved by edge device: results/EdgeDevice_results.csv")
+    def collect_image_batch(self, sample_path: str, batch_size: int) -> tuple[list, list[dict]]:
+        dataset = datasets.ImageFolder(sample_path)
+        files = []
+        metadata = []
 
-        return 0
-    finally:
-        for process in reversed(processes):
+        for image_path, class_index in dataset.imgs:
+            if len(files) >= batch_size:
+                break
+            if not self.is_valid_image(image_path):
+                continue
+
+            image_name = os.path.basename(image_path)
+            mime_type, _ = mimetypes.guess_type(image_path)
+            with open(image_path, "rb") as image_file:
+                files.append(("files", (image_name, image_file.read(), mime_type)))
+            metadata.append(
+                {
+                    "UUID": str(uuid.uuid4()),
+                    "Filename": image_name,
+                    "True Class": class_index,
+                }
+            )
+
+        if len(files) < batch_size:
+            raise RuntimeError(
+                f"Only found {len(files)} valid images in {sample_path}; need {batch_size}."
+            )
+        return files, metadata
+
+    def is_valid_image(self, image_path: str) -> bool:
+        mime_type, _ = mimetypes.guess_type(image_path)
+        if not mime_type or not mime_type.startswith("image/"):
+            return False
+
+        try:
+            with Image.open(image_path) as img:
+                img.verify()
+            return True
+        except (UnidentifiedImageError, OSError):
+            return False
+
+    def post_process_results(self) -> None:
+        self.analysis_dir.mkdir(parents=True, exist_ok=True)
+        raw_results = self.load_raw_results()
+        timing_results = self.add_timing_durations(raw_results)
+
+        self.write_timing_csv(timing_results)
+        summary = self.build_summary(timing_results)
+        self.summary_md.write_text(summary)
+
+        print(summary)
+        print(f"Wrote timing CSV: {self.timing_results_csv}")
+        print(f"Wrote summary: {self.summary_md}")
+
+    def load_raw_results(self) -> pd.DataFrame:
+        results = pd.read_csv(self.raw_results_csv)
+        for column in TIMING_COLUMNS:
+            if column in results.columns:
+                results[column] = pd.to_numeric(results[column], errors="coerce")
+        return results
+
+    def add_timing_durations(self, results: pd.DataFrame) -> pd.DataFrame:
+        timing = results.copy()
+        for output_column, (end_column, start_column) in TIMING_DURATIONS.items():
+            timing[output_column] = seconds_between(timing, end_column, start_column)
+
+        offloaded_total = seconds_between(
+            timing, "ts_results_received_from_offloading_module", "ts_sml_inference_start"
+        )
+        local_total = seconds_between(
+            timing, "ts_results_saved_not_offloaded", "ts_sml_inference_start"
+        )
+        timing["total_tracked_latency_s"] = offloaded_total.fillna(local_total)
+
+        if "ts_sample_sent_to_edge_server" in timing.columns:
+            batch_keys = timing["ts_sample_sent_to_edge_server"].fillna(-1)
+            timing["edge_server_batch_id"] = pd.factorize(batch_keys)[0]
+            timing.loc[batch_keys == -1, "edge_server_batch_id"] = pd.NA
+
+        return timing
+
+    def write_timing_csv(self, timing: pd.DataFrame) -> None:
+        available_columns = [column for column in TIMING_OUTPUT_COLUMNS if column in timing.columns]
+        output = timing[available_columns].copy()
+
+        for column in output.columns:
+            if column.endswith("_s"):
+                values = pd.to_numeric(output[column], errors="coerce")
+                output[column] = values.map(lambda value: "" if pd.isna(value) else f"{value:.6f}")
+
+        if "edge_server_batch_id" in output.columns:
+            batch_ids = pd.to_numeric(output["edge_server_batch_id"], errors="coerce")
+            output["edge_server_batch_id"] = batch_ids.map(
+                lambda value: "" if pd.isna(value) else str(int(value))
+            )
+
+        output.to_csv(self.timing_results_csv, index=False)
+
+    def build_summary(self, timing: pd.DataFrame) -> str:
+        lines = [f"Rows: {len(timing)}"]
+
+        if "Offloaded" in timing.columns:
+            offloaded = timing["Offloaded"].astype(str).str.lower().eq("true")
+            lines.append(f"Offloaded: {offloaded.sum()} / {len(timing)}")
+
+        if "Buffered" in timing.columns:
+            buffered = timing["Buffered"].astype(str).str.lower().eq("true")
+            lines.append(f"Still buffered: {buffered.sum()} / {len(timing)}")
+
+        if "edge_server_batch_id" in timing.columns:
+            batch_sizes = (
+                timing.dropna(subset=["edge_server_batch_id"])
+                .groupby("edge_server_batch_id")
+                .size()
+                .tolist()
+            )
+            lines.append(f"Edge-server batches observed: {len(batch_sizes)}")
+            lines.append(f"Edge-server batch sizes: {batch_sizes}")
+
+        lines.append(
+            "Total tracked latency median: "
+            f"{format_median_seconds(timing['total_tracked_latency_s'])}"
+        )
+        lines.append(f"SML inference mean: {format_mean_seconds(timing['sml_inference_s'])}")
+        lines.append(f"LML inference mean: {format_mean_seconds(timing['lml_inference_s'])}")
+        lines.append(f"Offload roundtrip: {format_mean_seconds(timing['offload_roundtrip_s'])}")
+
+        throughput = self.approx_throughput(timing)
+        if throughput is not None:
+            lines.append(f"Approx throughput: ~{throughput:.2f} samples/s")
+
+        return "\n".join(lines) + "\n"
+
+    def approx_throughput(self, timing: pd.DataFrame) -> float | None:
+        start = pd.to_numeric(timing["ts_sml_inference_start"], errors="coerce").min()
+        end_candidates = timing["ts_results_received_from_offloading_module"].fillna(
+            timing.get("ts_results_saved_not_offloaded")
+        )
+        end = pd.to_numeric(end_candidates, errors="coerce").max()
+        if pd.isna(start) or pd.isna(end) or end <= start:
+            return None
+        return len(timing) / (end - start)
+
+    def stop_services(self) -> None:
+        for process in reversed(self.processes):
             process.terminate()
-        for process in reversed(processes):
+        for process in reversed(self.processes):
             try:
                 process.wait(timeout=10)
             except subprocess.TimeoutExpired:
                 process.kill()
+
+
+def main() -> int:
+    return LocalSmokeTest().run()
 
 
 if __name__ == "__main__":

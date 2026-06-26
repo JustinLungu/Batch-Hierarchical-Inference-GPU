@@ -3,6 +3,12 @@
 This folder contains Python utilities for local development and experiment
 orchestration. Shell setup/download helpers live in `scripts/`.
 
+The local smoke test code is split by responsibility:
+
+- `run_local_smoke_test.py` runs the workflow and post-processes the results.
+- `constants.py` keeps paths, defaults, and timing column definitions.
+- `utils.py` keeps small reusable helpers for config, processes, and timing math.
+
 ## Local Smoke Test
 
 Run the local Python-script path with one small fixed batch:
@@ -35,6 +41,9 @@ controller utility -> edge_device.py -> edge_server.py
 
 It reads defaults from `config/experiment.env`. The edge-device service writes
 raw results to `results/EdgeDevice_results.csv`.
+After inference finishes, the same file automatically analyzes the raw results
+and writes `results/analysis/summary.md` and
+`results/analysis/timing_results.csv`.
 
 For this local utility:
 
@@ -43,20 +52,9 @@ For this local utility:
 - `FLUSH_FINAL_BATCH=true` sends any final partial edge-server batch at the end
   of the request.
 
-## Results Analysis
-
-Summarize a result CSV into derived timings and a readable markdown report:
-
-```bash
-python src/analyze_results.py
-```
-
-Outputs:
+Outputs from the analysis step:
 
 ```text
 results/analysis/timing_results.csv
 results/analysis/summary.md
 ```
-
-The analyzer expects `results/EdgeDevice_results.csv` and writes into
-`results/analysis/`.
