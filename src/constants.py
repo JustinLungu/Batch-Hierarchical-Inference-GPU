@@ -13,6 +13,8 @@ EDGE_DEVICE_RESULTS_FILENAME = "EdgeDevice_results.csv"
 ANALYSIS_DIRNAME = "analysis"
 TIMING_RESULTS_FILENAME = "timing_results.csv"
 SUMMARY_FILENAME = "summary.md"
+RUN_METADATA_FILENAME = "run_metadata.json"
+RAW_RESULTS_COPY_FILENAME = "raw_edge_device_results.csv"
 
 TIMING_COLUMNS = [
     "ts_sml_inference_start",
