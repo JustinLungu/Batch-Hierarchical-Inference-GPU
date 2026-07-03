@@ -1,0 +1,9 @@
+.agents
+.codex
+.git
+.venv
+__pycache__
+*.pyc
+results
+notebooks
+data/datasets

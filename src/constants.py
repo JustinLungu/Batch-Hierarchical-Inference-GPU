@@ -10,6 +10,14 @@ EDGE_SERVER_SCRIPT = Path("app/edge_server/edge_server.py")
 EDGE_DEVICE_SCRIPT = Path("app/edge_device/edge_device.py")
 EDGE_DEVICE_RESULTS_FILENAME = "EdgeDevice_results.csv"
 
+DOCKER_NETWORK = "edge_net"
+DOCKER_EDGE_SERVER_CONTAINER = "edge_server"
+DOCKER_EDGE_DEVICE_CONTAINER = "edge_device"
+DOCKER_EDGE_SERVER_IMAGE = "batch-hi-edge-server:local"
+DOCKER_EDGE_DEVICE_IMAGE = "batch-hi-edge-device:local"
+DOCKER_EDGE_SERVER_DOCKERFILE = Path("docker/local/Dockerfile.edge_server.cpu")
+DOCKER_EDGE_DEVICE_DOCKERFILE = Path("docker/local/Dockerfile.edge_device.cpu")
+
 ANALYSIS_DIRNAME = "analysis"
 TIMING_RESULTS_FILENAME = "timing_results.csv"
 SUMMARY_FILENAME = "summary.md"

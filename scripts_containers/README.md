@@ -26,3 +26,17 @@ For managing images there is a version numbering system, which is used to tag th
 **Scripts for Running Docker Containers:**  
 `start_local_containers_amd64.ps1` - Starts local Docker containers for AMD64 architecture.  
 `start_local_containers_arm64.ps1` - Starts local Docker containers for ARM64 architecture.  
+
+## Linux Local Docker Smoke Test
+
+For the current local development workflow on Linux, use:
+
+```bash
+source .venv/bin/activate
+python src/run_local_docker_test.py
+```
+
+This reuses the same controller and result post-processing as the local Python
+script smoke test, but starts `edge_server` and `edge_device` as Docker
+containers. Results are written to `results/analysis_local_docker_cpu/` for
+`DEVICE=cpu`.

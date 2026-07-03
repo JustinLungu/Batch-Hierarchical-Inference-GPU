@@ -5,7 +5,9 @@ orchestration. Shell setup/download helpers live in `scripts/`.
 
 The local smoke test code is split by responsibility:
 
-- `run_local_smoke_test.py` runs the workflow and post-processes the results.
+- `experiment_runner.py` owns the shared controller, timing, summary, and metadata flow.
+- `run_local_smoke_test.py` starts/stops local Python service processes.
+- `run_local_docker_test.py` starts/stops local Docker service containers.
 - `constants.py` keeps local paths, filenames, and timing column definitions.
 - `utils.py` keeps small reusable helpers for config, processes, and timing math.
 
@@ -58,4 +60,28 @@ results/analysis_local_cpu/summary.md
 results/analysis_local_cpu/timing_results.csv
 results/analysis_local_cpu/run_metadata.json
 results/analysis_local_cpu/raw_edge_device_results.csv
+```
+
+## Local Docker Test
+
+Run the same controller and analysis flow, but with `edge_server.py` and
+`edge_device.py` inside Docker containers:
+
+```bash
+source .venv/bin/activate
+python src/run_local_docker_test.py
+```
+
+The Docker runner builds the local images if they do not exist, starts the
+`edge_server` and `edge_device` containers on the `edge_net` Docker network,
+sends the configured sample batch from the host Python process, and removes the
+containers when the run finishes.
+
+Outputs from the Docker analysis step:
+
+```text
+results/analysis_local_docker_cpu/summary.md
+results/analysis_local_docker_cpu/timing_results.csv
+results/analysis_local_docker_cpu/run_metadata.json
+results/analysis_local_docker_cpu/raw_edge_device_results.csv
 ```
