@@ -4,9 +4,6 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CONFIG_FILE = Path(os.environ.get("CONFIG_FILE", "config/experiment.env"))
-EXPECA_PUBLIC_IP_CONFIG_FILE = Path(
-    os.environ.get("EXPECA_PUBLIC_IP_CONFIG_FILE", "config/expeca_public_ip.env")
-)
 SMOKE_LOG_DIR = Path("/tmp/bhi-local-smoke")
 
 EDGE_SERVER_SCRIPT = Path("app/edge_server/edge_server.py")

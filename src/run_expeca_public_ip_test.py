@@ -1,6 +1,5 @@
 import requests
 
-from constants import CONFIG_FILE, EXPECA_PUBLIC_IP_CONFIG_FILE
 from experiment_runner import ExperimentRunner
 
 
@@ -8,9 +7,6 @@ class ExpecaPublicIpRunner(ExperimentRunner):
     MODE = "expeca_public_ip"
     RUN_LABEL = "expeca_public_ip"
     ANALYSIS_LABEL = "expeca_public_ip"
-
-    def config_files(self) -> list:
-        return [CONFIG_FILE, EXPECA_PUBLIC_IP_CONFIG_FILE]
 
     def start_services(self) -> None:
         print("Using already-running ExPECA public-IP containers.")

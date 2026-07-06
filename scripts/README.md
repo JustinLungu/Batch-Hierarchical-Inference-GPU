@@ -87,5 +87,8 @@ scripts/push_expeca_cpu_images.sh
 ```
 
 Then follow `docs/expeca_public_ip_cpu_baseline.md` to edit the notebook image
-names, start ExPECA containers, set `config/expeca_public_ip.env`, and run
+names, start ExPECA containers, set `config/experiment.env`, and run
 `src/run_expeca_public_ip_test.py`.
+
+Set `CONTROLLER_MAX_SAMPLES=all` in `config/experiment.env` for a full
+dataset run. Use a small integer such as `4` for a quick remote smoke test.

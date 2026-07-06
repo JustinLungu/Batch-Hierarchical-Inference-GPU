@@ -211,10 +211,11 @@ Edge Server: Starting... (Device: cpu, Port: 8001)
 Edge Device: Starting... (Device: cpu, Port: 8000)
 ```
 
-## 9. Configure the Tiny CPU Baseline
+## 9. Configure the CPU Experiment
 
-Open `config/expeca_public_ip.env` and enter the public IPs printed by the
-notebook:
+Open `config/experiment.env` and enter the public IPs printed by the notebook.
+The same file also controls whether this is a tiny check or the full selected
+dataset:
 
 ```env
 DEVICE=cpu
@@ -224,8 +225,15 @@ EDGE_SERVER_PORT=8001
 EDGE_DEVICE_PORT=8000
 BATCH_SIZE=4
 CONTROLLER_BATCH_SIZE=4
+CONTROLLER_MAX_SAMPLES=all
 FLUSH_FINAL_BATCH=true
 ```
+
+`BATCH_SIZE` is the edge-server offload batch size. `CONTROLLER_BATCH_SIZE` is
+how many images the laptop sends to the edge-device in each request.
+`CONTROLLER_MAX_SAMPLES` is the total number of images sent by the controller.
+Use a small integer such as `4` for a quick check, or `all` to run the whole
+dataset selected by `SAMPLE_PATH`.
 
 Then run:
 
@@ -237,13 +245,19 @@ The runner:
 
 - checks both remote `/logs` endpoints;
 - sends experiment config to `/config` on both containers;
-- sends one controller batch of images to the edge-device `/predict` endpoint;
+- sends images to the edge-device `/predict` endpoint in repeated controller
+  batches until `CONTROLLER_MAX_SAMPLES` is reached;
 - lets the edge-device offload to the edge-server;
 - downloads `/results` from the edge-device;
 - writes local timing analysis.
 
 The config request clears previous container logs/results. That is expected and
 helps keep each baseline run clean.
+
+This is the recommended non-interactive replacement for the notebook's final
+manual `/app/start.sh` instructions. It still uses the same edge-device and
+edge-server runtime APIs, but makes full runs and batch-size sweeps repeatable
+from one terminal command.
 
 ## 10. Read the Results
 
