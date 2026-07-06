@@ -14,6 +14,8 @@ This folder contains shell helpers for preparing local experiments:
 - `build_expeca_cpu_images.sh` builds the author's CPU edge-server and
   edge-device images with configurable registry tags.
 - `push_expeca_cpu_images.sh` pushes those CPU images to your registry.
+- `build_expeca_gpu_server_image.sh` builds a CUDA-enabled edge-server image.
+- `push_expeca_gpu_server_image.sh` pushes the CUDA-enabled edge-server image.
 
 They read defaults from `config/experiment.env`. You can override that file per
 command:
@@ -92,3 +94,26 @@ names, start ExPECA containers, set `config/experiment.env`, and run
 
 Set `CONTROLLER_MAX_SAMPLES=all` in `config/experiment.env` for a full
 dataset run. Use a small integer such as `4` for a quick remote smoke test.
+
+## ExPECA GPU Server Prep
+
+The edge-device image can stay CPU. For GPU experiments, build and push only the
+CUDA-enabled edge-server image:
+
+```bash
+# In config/experiment.env:
+# EXPECA_GPU_EDGE_SERVER_IMAGE_TAG=gpu-amd64-001
+
+scripts/build_expeca_gpu_server_image.sh
+scripts/push_expeca_gpu_server_image.sh
+```
+
+Then in `notebooks/ExPECA_HI_setup_Public_IP.ipynb`, set:
+
+```python
+EDGE_SERVER_IMAGE_TAG = "gpu-amd64-001"
+EDGE_SERVER_DEVICE = "cuda"
+```
+
+Keep the edge-device image/device on CPU unless you intentionally want to test a
+GPU edge-device too.

@@ -126,6 +126,23 @@ def resolve_device():
         return torch.device("cuda")
     raise ValueError("DEVICE must be one of: auto, cpu, cuda")
 
+# Function: Describe runtime compute backend for logs
+def device_diagnostics():
+    diagnostics = {
+        "torch_version": torch.__version__,
+        "cuda_available": torch.cuda.is_available(),
+        "cuda_version": torch.version.cuda,
+        "selected_device": str(device),
+    }
+    if torch.cuda.is_available():
+        current_device = torch.cuda.current_device()
+        diagnostics["cuda_device_index"] = current_device
+        diagnostics["cuda_device_name"] = torch.cuda.get_device_name(current_device)
+        diagnostics["cuda_device_capability"] = ".".join(
+            str(value) for value in torch.cuda.get_device_capability(current_device)
+        )
+    return diagnostics
+
 # Initialize: Global variables
 config = {}
 lml_model = None
@@ -242,4 +259,5 @@ async def predict(files: List[UploadFile] = File(...), metadata: str = Form(None
 if __name__ == "__main__":
     clear_results_and_logs()
     logger.info(f"Edge Server: Starting... (Device: {device}, Port: {EDGE_SERVER_PORT})")
+    logger.info(f"Edge Server: Runtime diagnostics: {json.dumps(device_diagnostics())}")
     uvicorn.run(app, host="0.0.0.0", port=int(EDGE_SERVER_PORT))

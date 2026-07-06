@@ -295,3 +295,39 @@ The CPU baseline is complete when:
 After this, the next step is GPU: build a CUDA-capable edge-server image,
 deploy it on a GPU-capable ExPECA worker, set `DEVICE=cuda`, verify CUDA inside
 the server logs/container, and rerun the same fixed-batch experiments.
+
+## GPU Server Preparation
+
+The public ExPECA inventory page does not currently list GPU/accelerator fields
+for the worker nodes, so the GPU worker name must be confirmed separately with
+the ExPECA contact/supervisor. The rest of the GPU path can be prepared before
+that worker is known.
+
+Build and push the CUDA-enabled edge-server image:
+
+```bash
+# In config/experiment.env:
+# EXPECA_GPU_EDGE_SERVER_IMAGE_TAG=gpu-amd64-001
+
+scripts/build_expeca_gpu_server_image.sh
+scripts/push_expeca_gpu_server_image.sh
+```
+
+In `notebooks/ExPECA_HI_setup_Public_IP.ipynb`, switch only the edge-server:
+
+```python
+EDGE_SERVER_IMAGE_TAG = "gpu-amd64-001"
+EDGE_SERVER_DEVICE = "cuda"
+EDGE_DEVICE_AMD64_IMAGE_TAG = "cpu-amd64-001"
+EDGE_DEVICE_DEVICE = "cpu"
+```
+
+Then reserve/create the edge-server on the confirmed GPU-capable worker. The
+edge-server logs should include CUDA diagnostics like:
+
+```text
+Edge Server: Runtime diagnostics: {"cuda_available": true, ...}
+```
+
+Do not treat a GPU run as valid unless the logs confirm `cuda_available: true`
+and show a CUDA device name.
