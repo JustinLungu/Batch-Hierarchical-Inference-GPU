@@ -65,7 +65,7 @@ if [[ -n "$EXPECA_IMAGE_NAMESPACE" ]]; then
   echo "OK   EXPECA_IMAGE_NAMESPACE=${EXPECA_IMAGE_NAMESPACE}"
 else
   echo "MISS EXPECA_IMAGE_NAMESPACE is empty"
-  echo "     Set it to your Docker Hub or registry namespace before build/push."
+  echo "     Set it in config/experiment.env before build/push."
   failures=$((failures + 1))
 fi
 
@@ -82,6 +82,7 @@ else
   echo "  scripts/download_dataset.sh"
   echo "  scripts/download_models.sh --all"
   echo "  scripts/prepare_expeca_author_layout.sh"
-  echo "  EXPECA_IMAGE_NAMESPACE=your_namespace scripts/check_expeca_cpu_prereqs.sh"
+  echo "  edit config/experiment.env"
+  echo "  scripts/check_expeca_cpu_prereqs.sh"
   exit 1
 fi

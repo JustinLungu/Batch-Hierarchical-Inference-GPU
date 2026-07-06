@@ -17,8 +17,7 @@ EXPECA_IMAGE_TAG="${EXPECA_IMAGE_TAG:-cpu-amd64-001}"
 
 if [[ -z "$EXPECA_IMAGE_NAMESPACE" ]]; then
   echo "EXPECA_IMAGE_NAMESPACE is required."
-  echo "Example:"
-  echo "  EXPECA_IMAGE_NAMESPACE=your_dockerhub_user scripts/push_expeca_cpu_images.sh"
+  echo "Set it in config/experiment.env before running this script."
   exit 1
 fi
 

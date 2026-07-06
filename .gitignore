@@ -1,8 +1,10 @@
 # Ignore following files and folders
 __pycache__/
 config/.env
+*-openrc.sh
 data/
 results/
 results_analysis/
 scripts_analysis/
 scripts_results_cleaning/
+notebooks/*-openrc.sh

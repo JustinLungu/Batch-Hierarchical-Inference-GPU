@@ -45,7 +45,7 @@ class ExperimentRunner:
 
     def __init__(self):
         os.chdir(REPO_ROOT)
-        self.config = load_env_file(CONFIG_FILE)
+        self.config = self.load_config()
         self.started_at = datetime.now(timezone.utc)
         self.run_id = self.started_at.strftime("%Y%m%dT%H%M%SZ")
 
@@ -69,6 +69,15 @@ class ExperimentRunner:
         self.summary_md = self.analysis_dir / SUMMARY_FILENAME
         self.metadata_json = self.analysis_dir / RUN_METADATA_FILENAME
         self.raw_results_copy = self.analysis_dir / RAW_RESULTS_COPY_FILENAME
+
+    def config_files(self) -> list[Path]:
+        return [CONFIG_FILE]
+
+    def load_config(self) -> dict[str, str]:
+        config: dict[str, str] = {}
+        for config_file in self.config_files():
+            config.update(load_env_file(config_file))
+        return config
 
     def run(self) -> int:
         completed = False

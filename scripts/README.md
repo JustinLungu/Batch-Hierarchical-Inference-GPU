@@ -7,6 +7,8 @@ This folder contains shell helpers for preparing local experiments:
 - `download_models.sh` downloads configured torchvision checkpoints.
 - `prepare_expeca_author_layout.sh` creates the dataset paths expected by the
   author's ExPECA Dockerfile.
+- `setup_expeca_notebook_env.sh` installs notebook-only ExPECA dependencies
+  into the uv environment.
 - `check_expeca_cpu_prereqs.sh` checks local prerequisites for the ExPECA
   public-IP CPU baseline.
 - `build_expeca_cpu_images.sh` builds the author's CPU edge-server and
@@ -56,17 +58,34 @@ for:
 
 ## ExPECA Public-IP CPU Baseline
 
-Before using the author's ExPECA public-IP notebook, prepare the original Docker
-layout and build/push images:
+Before using the ExPECA public-IP notebook, prepare the local assets and log in
+to your registry:
 
 ```bash
 scripts/download_dataset.sh
 scripts/download_models.sh --all
 scripts/prepare_expeca_author_layout.sh
+scripts/setup_expeca_notebook_env.sh
 
-EXPECA_IMAGE_NAMESPACE=your_dockerhub_user scripts/check_expeca_cpu_prereqs.sh
-EXPECA_IMAGE_NAMESPACE=your_dockerhub_user scripts/build_expeca_cpu_images.sh
-EXPECA_IMAGE_NAMESPACE=your_dockerhub_user scripts/push_expeca_cpu_images.sh
+docker login
 ```
 
-Then follow `docs/expeca_public_ip_cpu_baseline.md`.
+Then set the image constants in `config/experiment.env`:
+
+```env
+EXPECA_IMAGE_NAMESPACE=YOUR_DOCKERHUB_USERNAME_OR_REGISTRY_NAMESPACE
+EXPECA_IMAGE_TAG=cpu-amd64-001
+EXPECA_IMAGE_PLATFORM=linux/amd64
+```
+
+Build and push:
+
+```bash
+scripts/check_expeca_cpu_prereqs.sh
+scripts/build_expeca_cpu_images.sh
+scripts/push_expeca_cpu_images.sh
+```
+
+Then follow `docs/expeca_public_ip_cpu_baseline.md` to edit the notebook image
+names, start ExPECA containers, set `config/expeca_public_ip.env`, and run
+`src/run_expeca_public_ip_test.py`.

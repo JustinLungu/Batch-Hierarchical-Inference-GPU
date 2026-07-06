@@ -1,8 +1,9 @@
 # ExPECA Public-IP CPU Baseline
 
-This guide prepares the first remote ExPECA run while staying close to the
-author's original setup. The goal is not GPU yet. The goal is to prove that the
-remote containers boot, accept configuration, communicate, and return results.
+This guide prepares the first remote ExPECA run using public IPs and CPU-only
+containers. The goal is to prove that the remote containers boot, accept
+configuration, communicate with each other, and return timing/results data
+before moving to GPU.
 
 ## What This Runs
 
@@ -12,96 +13,112 @@ laptop/controller
       -> ExPECA edge-server container on public IP
 ```
 
-Both containers run with `DEVICE=cpu` for the baseline.
+Both containers run with `DEVICE=cpu`.
 
-## 1. Prepare Local Assets
+## 1. Create Registry Access
 
-Set up Python, download the small dataset, and download model checkpoints:
+ExPECA workers pull images from a container registry. Docker Hub is the simplest
+default path.
+
+1. Create or log in to a Docker Hub account.
+2. Log in locally from the project terminal:
+
+   ```bash
+   docker login
+   ```
+
+3. Open `config/experiment.env` and set the image constants:
+
+   ```env
+   EXPECA_IMAGE_NAMESPACE=YOUR_DOCKERHUB_USERNAME_OR_REGISTRY_NAMESPACE
+   EXPECA_IMAGE_TAG=cpu-amd64-001
+   EXPECA_IMAGE_PLATFORM=linux/amd64
+   ```
+
+The scripts will create these image names:
+
+```text
+YOUR_NAMESPACE/hi-framework-edge-server:YOUR_TAG
+YOUR_NAMESPACE/hi-framework-edge-device:YOUR_TAG
+```
+
+For Docker Hub, `<namespace>` is normally your Docker Hub username. For another
+registry, use the full namespace expected by that registry.
+
+## 2. Prepare Local Assets
+
+Set up the Python environment, download a small dataset, and download all model
+checkpoints supported by the current helper scripts:
 
 ```bash
 scripts/setup_env.sh
+source .venv/bin/activate
 scripts/download_dataset.sh
 scripts/download_models.sh --all
 ```
 
-The original edge-device Dockerfile expects an older dataset layout:
+The ExPECA Docker build also needs the dataset layout expected by the original
+edge-device Dockerfile:
+
+```bash
+scripts/prepare_expeca_author_layout.sh
+```
+
+That script prepares:
 
 ```text
 data/datasets/imagenette/val_renamed/
 data/datasets/imagenetV2/
 ```
 
-Create that layout from the downloaded Imagenette data:
+`imagenetV2` may only contain a placeholder file for the CPU baseline. That is
+fine; it exists so Docker can copy the expected directory.
+
+## 3. Prepare the Notebook Environment
+
+The ExPECA notebook uses the `python-chi` bindings and `loguru`. Install those
+into the selected project environment:
 
 ```bash
-scripts/prepare_expeca_author_layout.sh
+scripts/setup_expeca_notebook_env.sh
 ```
 
-## 2. Configure Image Names
+Then restart the notebook kernel in VS Code/Jupyter so it sees the installed
+packages.
 
-Choose a Docker Hub or container-registry namespace. You can edit
-`config/experiment.env` or override it per command:
+## 4. Check Build Prerequisites
 
-```bash
-export EXPECA_IMAGE_NAMESPACE=justin157
-export EXPECA_IMAGE_TAG=cpu-amd64-001
-```
-
-The resulting image names are:
-
-```text
-justin157/hi-framework-edge-server:cpu-amd64-001
-justin157/hi-framework-edge-device:cpu-amd64-001
-```
-
-The author's old Docker Hub tags were checked and were not publicly pullable:
-
-```bash
-docker pull h3nkk44/hi-framework-edge-server:latest_amd64
-docker pull h3nkk44/hi-framework-edge-device:latest_amd64
-```
-
-Both returned `not found`, so this workflow builds and pushes our own images
-instead of relying on the previous private/unavailable images.
-
-## 3. Check Prerequisites
+Run the preflight checker:
 
 ```bash
 scripts/check_expeca_cpu_prereqs.sh
 ```
 
-Fix any missing paths before building.
+Fix any missing dataset/model paths before building.
 
-## 4. Build and Push CPU Images
+## 5. Build and Push CPU Images
+
+Build the CPU images from the repository Dockerfiles:
 
 ```bash
-EXPECA_IMAGE_NAMESPACE=justin157 scripts/build_expeca_cpu_images.sh
-EXPECA_IMAGE_NAMESPACE=justin157 scripts/push_expeca_cpu_images.sh
+scripts/build_expeca_cpu_images.sh
 ```
 
-These scripts build from the author's original Dockerfiles:
+Push them to the registry:
 
-```text
-app/edge_server/Dockerfile.edge_server
-app/edge_device/Dockerfile.edge_device
+```bash
+scripts/push_expeca_cpu_images.sh
 ```
 
-If the edge-device build fails at:
-
-```text
-COPY data/datasets/imagenetV2/ ./data/datasets/imagenetV2/
-```
-
-rerun:
+If the edge-device image build fails while copying a dataset directory, rerun:
 
 ```bash
 scripts/prepare_expeca_author_layout.sh
 ```
 
-That script creates the expected dataset layout and a placeholder file so the
-empty `imagenetV2` directory is included in Docker's build context.
+Then rebuild.
 
-## 5. Start Containers on ExPECA
+## 6. Configure the ExPECA Notebook
 
 Open:
 
@@ -109,98 +126,158 @@ Open:
 notebooks/ExPECA_HI_setup_Public_IP.ipynb
 ```
 
-Run the authentication/setup cells, then use the public-IP container sections.
+Run the authentication cell first. It expects an OpenRC file downloaded from the
+ExPECA dashboard. Keep that file private; files matching `*-openrc.sh` are
+ignored by git.
 
-Replace the author's image names:
+Run the import/setup cell next. The notebook now includes helper functions for:
+
+- listing containers by name;
+- destroying stale containers by UUID;
+- polling container creation until `Running` or `Error`;
+- inspecting logs without relying on ambiguous name lookup.
+
+Before creating containers, run the `Cleanup stale containers` cell. If a
+previous run was interrupted, ExPECA may still have `hi-edge-server` or
+`hi-edge-device` containers.
+
+Common stale-container cleanup:
 
 ```python
-image = "h3nkk44/hi-framework-edge-server:latest_amd64"
-image = "h3nkk44/hi-framework-edge-device:latest_amd64"
+destroy_named_containers("hi-edge-server", statuses={"Error", "Creating"})
+destroy_named_containers("hi-edge-device", statuses={"Error", "Creating"})
 ```
 
-with your pushed images:
+Full reset when you intentionally want to recreate everything:
 
 ```python
-image = "justin157/hi-framework-edge-server:cpu-amd64-001"
-image = "justin157/hi-framework-edge-device:cpu-amd64-001"
+destroy_named_containers("hi-edge-device")
+destroy_named_containers("hi-edge-server")
 ```
 
-For the first baseline, use the worker-node/amd64 edge-device option rather
+Destroy the edge-device first, then the edge-server, so the server IP does not
+change underneath a still-running device.
+
+## 7. Set Notebook Image Names
+
+In the notebook import/setup cell, set:
+
+```python
+EXPECA_IMAGE_NAMESPACE = "YOUR_DOCKERHUB_USERNAME_OR_REGISTRY_NAMESPACE"
+EXPECA_IMAGE_TAG = "cpu-amd64-001"
+```
+
+Use the same namespace/tag you pushed in step 5. The notebook derives
+`EDGE_SERVER_IMAGE` and `EDGE_DEVICE_AMD64_IMAGE` from those values and passes
+them into the ExPECA container creation cells.
+
+For the first CPU baseline, use the worker-node/amd64 edge-device option rather
 than the Raspberry Pi/arm64 option.
 
-Add `DEVICE=cpu` to both container environments:
+Both container environments should include:
 
 ```python
-environment = {
-    "DNS_IP": "8.8.8.8",
-    "GATEWAY_IP": "130.237.11.97",
-    "PASS": "expeca",
-    "DEVICE": "cpu",
-}
+"DEVICE": "cpu"
 ```
 
-For the edge-device container, keep the author's server IP handoff:
+The edge-device environment must also receive the edge-server public IP through
+the notebook variable:
 
 ```python
 "EDGE_SERVER_IP": edge_server_pub_ip
 ```
 
-Record both public IPs printed by the notebook.
+Run the edge-server creation cell first. When it prints `status: Running`,
+record the server public IP. Then run the worker-node/amd64 edge-device
+creation cell and record the device public IP.
 
-## 6. Confirm Containers Are Reachable
+Do not rerun a creation cell if the matching container is already `Running`.
+If the notebook says a container name already exists, inspect it first. Reuse it
+if it is healthy, or destroy it if you want a clean rerun.
 
-From your laptop:
+## 8. Confirm Containers Are Reachable
+
+From the project terminal:
 
 ```bash
 curl http://EDGE_SERVER_PUBLIC_IP:8001/logs
 curl http://EDGE_DEVICE_PUBLIC_IP:8000/logs
 ```
 
-Successful responses mean the containers are running and reachable.
-
-## 7. Run a Tiny Baseline Experiment
-
-Use a very small test first:
+The logs should show:
 
 ```text
+Edge Server: Starting... (Device: cpu, Port: 8001)
+Edge Device: Starting... (Device: cpu, Port: 8000)
+```
+
+## 9. Configure the Tiny CPU Baseline
+
+Open `config/expeca_public_ip.env` and enter the public IPs printed by the
+notebook:
+
+```env
 DEVICE=cpu
+EDGE_SERVER_IP=EDGE_SERVER_PUBLIC_IP
+EDGE_DEVICE_IP=EDGE_DEVICE_PUBLIC_IP
+EDGE_SERVER_PORT=8001
+EDGE_DEVICE_PORT=8000
 BATCH_SIZE=4
 CONTROLLER_BATCH_SIZE=4
 FLUSH_FINAL_BATCH=true
 ```
 
-The author-provided external controller for testbed runs is:
-
-```text
-app/controller_external/Controller_testbed_containers.py
-```
-
-It has old hard-coded IPs. Before using it, replace those IPs with the public
-IPs printed by the notebook.
-
-If using the internal controller from the edge-device console, run:
+Then run:
 
 ```bash
-/app/start.sh
+.venv/bin/python src/run_expeca_public_ip_test.py
 ```
 
-When prompted for the dataset path, use:
+The runner:
+
+- checks both remote `/logs` endpoints;
+- sends experiment config to `/config` on both containers;
+- sends one controller batch of images to the edge-device `/predict` endpoint;
+- lets the edge-device offload to the edge-server;
+- downloads `/results` from the edge-device;
+- writes local timing analysis.
+
+The config request clears previous container logs/results. That is expected and
+helps keep each baseline run clean.
+
+## 10. Read the Results
+
+After a successful run, inspect:
 
 ```text
-imagenette/val_renamed/
+results/analysis_expeca_public_ip_cpu/summary.md
+results/analysis_expeca_public_ip_cpu/timing_results.csv
+results/analysis_expeca_public_ip_cpu/run_metadata.json
+results/analysis_expeca_public_ip_cpu/raw_edge_device_results.csv
+```
+
+The summary should include rows like:
+
+```text
+Rows: 4
+Offloaded: 4 / 4
+Edge-server batches observed: 1
+Edge-server batch sizes: [4]
+Approx throughput: ~... samples/s
 ```
 
 ## Success Criteria
 
-The CPU baseline is ready when:
+The CPU baseline is complete when:
 
-- edge-device `/logs` is reachable;
 - edge-server `/logs` is reachable;
+- edge-device `/logs` is reachable;
+- logs show both services started with `Device: cpu`;
 - both containers accept `/config`;
 - edge-device `/predict` returns at least one result;
-- `/results` downloads a CSV;
-- logs show the services started with `Device: cpu`.
+- edge-device `/results` downloads a CSV;
+- local analysis is written under `results/analysis_expeca_public_ip_cpu/`.
 
-After this, the next step is GPU: a CUDA-capable server image, a GPU-capable
-ExPECA worker, `DEVICE=cuda`, and explicit verification that CUDA is available
-inside the edge-server container.
+After this, the next step is GPU: build a CUDA-capable edge-server image,
+deploy it on a GPU-capable ExPECA worker, set `DEVICE=cuda`, verify CUDA inside
+the server logs/container, and rerun the same fixed-batch experiments.

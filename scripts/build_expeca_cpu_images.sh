@@ -18,8 +18,7 @@ EXPECA_IMAGE_PLATFORM="${EXPECA_IMAGE_PLATFORM:-linux/amd64}"
 
 if [[ -z "$EXPECA_IMAGE_NAMESPACE" ]]; then
   echo "EXPECA_IMAGE_NAMESPACE is required."
-  echo "Example:"
-  echo "  EXPECA_IMAGE_NAMESPACE=your_dockerhub_user scripts/build_expeca_cpu_images.sh"
+  echo "Set it in config/experiment.env before running this script."
   exit 1
 fi
 
@@ -69,4 +68,4 @@ echo "  ${EDGE_SERVER_IMAGE}"
 echo "  ${EDGE_DEVICE_IMAGE}"
 echo
 echo "Push them with:"
-echo "  EXPECA_IMAGE_NAMESPACE=${EXPECA_IMAGE_NAMESPACE} scripts/push_expeca_cpu_images.sh"
+echo "  scripts/push_expeca_cpu_images.sh"
