@@ -8,6 +8,10 @@ The local smoke test code is split by responsibility:
 - `experiment_runner.py` owns the shared controller, timing, summary, and metadata flow.
 - `run_local_smoke_test.py` starts/stops local Python service processes.
 - `run_local_docker_test.py` starts/stops local Docker service containers.
+- `run_expeca_public_ip_test.py` runs one remote ExPECA public-IP experiment
+  against already-running containers.
+- `run_expeca_batch_grid.py` runs repeated remote ExPECA experiments across
+  configured batch sizes and writes an aggregate comparison table.
 - `constants.py` keeps local paths, filenames, and timing column definitions.
 - `utils.py` keeps small reusable helpers for config, processes, and timing math.
 
@@ -85,3 +89,37 @@ results/analysis_local_docker_cpu/timing_results.csv
 results/analysis_local_docker_cpu/run_metadata.json
 results/analysis_local_docker_cpu/raw_edge_device_results.csv
 ```
+
+## ExPECA Batch Grid
+
+After the ExPECA public-IP containers are running, configure the sweep in
+`config/experiment.env`:
+
+```env
+BATCH_SIZE_GRID=1,2,4,8,16,32,64
+CONTROLLER_BATCH_SIZE=64
+CONTROLLER_BATCH_SIZE_GRID=
+CONTROLLER_MAX_SAMPLES=all
+```
+
+Then run:
+
+```bash
+source .venv/bin/activate
+python src/run_expeca_batch_grid.py
+```
+
+With `CONTROLLER_BATCH_SIZE_GRID` empty, the grid changes only `BATCH_SIZE`.
+That is the recommended first comparison for CPU vs GPU because the controller
+request size stays fixed.
+
+Aggregate outputs:
+
+```text
+results/analysis_expeca_public_ip_cpu_grid/summary.csv
+results/analysis_expeca_public_ip_cpu_grid/summary.md
+results/analysis_expeca_public_ip_cpu_grid/run_metadata.json
+```
+
+Each grid item also writes its own detailed folder, named by server and
+controller batch size.

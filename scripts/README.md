@@ -95,6 +95,16 @@ names, start ExPECA containers, set `config/experiment.env`, and run
 Set `CONTROLLER_MAX_SAMPLES=all` in `config/experiment.env` for a full
 dataset run. Use a small integer such as `4` for a quick remote smoke test.
 
+After one public-IP run works, sweep server-side batch sizes with:
+
+```bash
+python src/run_expeca_batch_grid.py
+```
+
+The grid is controlled by `BATCH_SIZE_GRID`, `CONTROLLER_BATCH_SIZE`,
+`CONTROLLER_BATCH_SIZE_GRID`, and `BATCH_GRID_PAIR_MODE` in
+`config/experiment.env`.
+
 ## ExPECA GPU Server Prep
 
 The edge-device image can stay CPU. For GPU experiments, build and push only the

@@ -259,7 +259,72 @@ manual `/app/start.sh` instructions. It still uses the same edge-device and
 edge-server runtime APIs, but makes full runs and batch-size sweeps repeatable
 from one terminal command.
 
-## 10. Read the Results
+## 10. Run a Batch-Size Grid
+
+Once the single CPU run works, sweep server-side batch sizes with the same
+already-running ExPECA containers.
+
+Configure the grid in `config/experiment.env`:
+
+```env
+BATCH_SIZE_GRID=1,2,4,8,16,32,64
+CONTROLLER_BATCH_SIZE=64
+CONTROLLER_BATCH_SIZE_GRID=
+BATCH_GRID_PAIR_MODE=product
+CONTROLLER_MAX_SAMPLES=all
+```
+
+With `CONTROLLER_BATCH_SIZE_GRID` empty, the grid runner tests each
+`BATCH_SIZE_GRID` value while keeping `CONTROLLER_BATCH_SIZE` fixed. This is
+usually the clearest first experiment because only the server offload batch
+size changes.
+
+For a quick check before launching the full dataset, set:
+
+```env
+CONTROLLER_MAX_SAMPLES=64
+BATCH_SIZE_GRID=1,2,4
+```
+
+Then run:
+
+```bash
+.venv/bin/python src/run_expeca_batch_grid.py
+```
+
+Each grid item writes its own detailed analysis folder:
+
+```text
+results/analysis_expeca_public_ip_cpu_serverbatch1_controllerbatch64/
+results/analysis_expeca_public_ip_cpu_serverbatch2_controllerbatch64/
+...
+```
+
+The grid runner also writes aggregate comparison files:
+
+```text
+results/analysis_expeca_public_ip_cpu_grid/summary.csv
+results/analysis_expeca_public_ip_cpu_grid/summary.md
+results/analysis_expeca_public_ip_cpu_grid/run_metadata.json
+```
+
+The aggregate CSV is the file to use for plotting CPU vs GPU later. It includes
+batch size, controller batch size, rows, throughput, latency, inference time,
+offload roundtrip, and links to each detailed analysis folder.
+
+If you want to vary both server batch size and controller request size, set
+`CONTROLLER_BATCH_SIZE_GRID` too:
+
+```env
+BATCH_SIZE_GRID=4,8,16
+CONTROLLER_BATCH_SIZE_GRID=32,64
+BATCH_GRID_PAIR_MODE=product
+```
+
+`product` tests all combinations. Use `zip` only when you want positional
+pairs, for example `4 with 32`, `8 with 64`, and `16 with 128`.
+
+## 11. Read the Results
 
 After a successful run, inspect:
 

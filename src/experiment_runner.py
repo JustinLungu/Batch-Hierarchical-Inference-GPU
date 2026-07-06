@@ -43,9 +43,16 @@ class ExperimentRunner:
     RUN_LABEL = "experiment"
     ANALYSIS_LABEL = "experiment"
 
-    def __init__(self):
+    def __init__(
+        self,
+        config_overrides: dict[str, str] | None = None,
+        analysis_suffix: str | None = None,
+    ):
         os.chdir(REPO_ROOT)
         self.config = self.load_config()
+        if config_overrides:
+            self.config.update(config_overrides)
+        self.analysis_suffix = analysis_suffix
         self.started_at = datetime.now(timezone.utc)
         self.run_id = self.started_at.strftime("%Y%m%dT%H%M%SZ")
 
@@ -227,7 +234,7 @@ class ExperimentRunner:
             )
         return files, metadata
 
-    def post_process_results(self) -> None:
+    def post_process_results(self) -> pd.DataFrame:
         self.analysis_dir.mkdir(parents=True, exist_ok=True)
         shutil.copy2(self.raw_results_csv, self.raw_results_copy)
         raw_results = self.load_raw_results()
@@ -244,6 +251,7 @@ class ExperimentRunner:
         print(f"Wrote timing CSV: {self.timing_results_csv}")
         print(f"Wrote summary: {self.summary_md}")
         print(f"Wrote metadata: {self.metadata_json}")
+        return timing_results
 
     def load_raw_results(self) -> pd.DataFrame:
         results = pd.read_csv(self.raw_results_csv)
@@ -379,6 +387,44 @@ class ExperimentRunner:
         }
         self.metadata_json.write_text(json.dumps(metadata, indent=2) + "\n")
 
+    def aggregate_metrics(self, timing: pd.DataFrame) -> dict:
+        batch_sizes = []
+        if "edge_server_batch_id" in timing.columns:
+            batch_sizes = (
+                timing.dropna(subset=["edge_server_batch_id"])
+                .groupby("edge_server_batch_id")
+                .size()
+                .tolist()
+            )
+
+        return {
+            "run_name": self.run_name,
+            "mode": self.MODE,
+            "device": self.device,
+            "batch_size": self.batch_size,
+            "controller_batch_size": self.controller_batch_size,
+            "controller_max_samples": self.controller_max_samples_label,
+            "flush_final_batch": self.flush_final_batch,
+            "rows": int(len(timing)),
+            "offloaded": self.count_true(timing, "Offloaded"),
+            "still_buffered": self.count_true(timing, "Buffered"),
+            "edge_server_batches_observed": len(batch_sizes),
+            "edge_server_batch_size_min": min(batch_sizes) if batch_sizes else None,
+            "edge_server_batch_size_median": float(pd.Series(batch_sizes).median())
+            if batch_sizes
+            else None,
+            "edge_server_batch_size_max": max(batch_sizes) if batch_sizes else None,
+            "total_latency_median_s": self.numeric_median(timing, "total_tracked_latency_s"),
+            "total_latency_mean_s": self.numeric_mean(timing, "total_tracked_latency_s"),
+            "sml_inference_mean_s": self.numeric_mean(timing, "sml_inference_s"),
+            "lml_inference_mean_s": self.numeric_mean(timing, "lml_inference_s"),
+            "offload_roundtrip_mean_s": self.numeric_mean(timing, "offload_roundtrip_s"),
+            "throughput_samples_s": self.approx_throughput(timing),
+            "analysis_folder": str(self.analysis_dir),
+            "summary_md": str(self.summary_md),
+            "timing_results_csv": str(self.timing_results_csv),
+        }
+
     def _build_run_name(self) -> str:
         flush_label = "flush" if self.flush_final_batch else "no_flush"
         return (
@@ -396,7 +442,10 @@ class ExperimentRunner:
         return str(self.controller_max_samples)
 
     def _analysis_dirname(self) -> str:
-        return f"{ANALYSIS_DIRNAME}_{self.ANALYSIS_LABEL}_{self.device}"
+        dirname = f"{ANALYSIS_DIRNAME}_{self.ANALYSIS_LABEL}_{self.device}"
+        if self.analysis_suffix:
+            dirname = f"{dirname}_{self.analysis_suffix}"
+        return dirname
 
     @staticmethod
     def is_valid_image(image_path: str) -> bool:
@@ -429,6 +478,24 @@ class ExperimentRunner:
         if column not in data.columns:
             return None
         return int(data[column].astype(str).str.lower().eq("true").sum())
+
+    @staticmethod
+    def numeric_mean(data: pd.DataFrame, column: str) -> float | None:
+        if column not in data.columns:
+            return None
+        values = pd.to_numeric(data[column], errors="coerce").dropna()
+        if values.empty:
+            return None
+        return float(values.mean())
+
+    @staticmethod
+    def numeric_median(data: pd.DataFrame, column: str) -> float | None:
+        if column not in data.columns:
+            return None
+        values = pd.to_numeric(data[column], errors="coerce").dropna()
+        if values.empty:
+            return None
+        return float(values.median())
 
     @staticmethod
     def approx_throughput(timing: pd.DataFrame) -> float | None:
