@@ -3,10 +3,13 @@ set -euo pipefail
 
 CONFIG_FILE="${CONFIG_FILE:-config/experiment.env}"
 if [[ -f "$CONFIG_FILE" ]]; then
-  set -a
-  # shellcheck disable=SC1090
-  source "$CONFIG_FILE"
-  set +a
+  while IFS='=' read -r name value; do
+    [[ -z "$name" || "$name" =~ ^[[:space:]]*# ]] && continue
+    [[ "$name" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
+    if [[ -z "${!name+x}" ]]; then
+      export "${name}=${value}"
+    fi
+  done < "$CONFIG_FILE"
 fi
 
 DATASET_DIR="${DATASET_DIR:-data/datasets}"

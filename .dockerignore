@@ -7,3 +7,9 @@ __pycache__
 results
 notebooks
 data/datasets
+!data/datasets/
+!data/datasets/imagenette/
+!data/datasets/imagenette/val_renamed/
+!data/datasets/imagenette/val_renamed/**
+!data/datasets/imagenetV2/
+!data/datasets/imagenetV2/.dockerkeep
