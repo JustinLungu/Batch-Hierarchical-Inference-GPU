@@ -47,7 +47,8 @@ Then it sends one configured sample batch through:
 controller utility -> edge_device.py -> edge_server.py
 ```
 
-It reads defaults from `config/experiment.env`. The edge-device service writes
+It reads stable defaults from `config/defaults.env` and active run choices from
+`config/experiment.env`. The edge-device service writes
 raw results to `results/EdgeDevice_results.csv`.
 After inference finishes, the same file automatically analyzes the raw results
 and writes a device-specific analysis folder such as `results/analysis_local_cpu/`.

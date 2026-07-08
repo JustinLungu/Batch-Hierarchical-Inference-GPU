@@ -70,6 +70,22 @@ Important details:
 
 The thesis focused only on image classification.
 
+Repository target path for reproducing this dataset:
+
+```text
+data/datasets/imagenetV2/matched-frequency-format-val
+```
+
+The folder should contain 1000 class directories and 10000 images. A placeholder
+`data/datasets/imagenetV2/.dockerkeep` file is not sufficient for thesis
+reproduction.
+
+Prepare it with:
+
+```bash
+scripts/download_dataset.sh --imagenetv2
+```
+
 ## Models
 
 The system used one small model on the Edge Device and one large model on the Edge
@@ -438,4 +454,3 @@ The thesis proposed several directions for future research:
 The most relevant future-work point for this repository is GPU acceleration on the
 Edge Server, because the thesis server-side LML inference was CPU-only despite using a
 very large model.
-

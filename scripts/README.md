@@ -3,7 +3,7 @@
 This folder contains shell helpers for preparing local experiments:
 
 - `setup_env.sh` syncs the uv environment from `pyproject.toml`.
-- `download_dataset.sh` downloads the configured local dataset.
+- `download_dataset.sh` downloads supported datasets.
 - `download_models.sh` downloads configured torchvision checkpoints.
 - `prepare_expeca_author_layout.sh` creates the dataset paths expected by the
   author's ExPECA Dockerfile.
@@ -17,11 +17,10 @@ This folder contains shell helpers for preparing local experiments:
 - `build_expeca_gpu_server_image.sh` builds a CUDA-enabled edge-server image.
 - `push_expeca_gpu_server_image.sh` pushes the CUDA-enabled edge-server image.
 
-They read defaults from `config/experiment.env`. You can override that file per
-command:
+They read stable defaults from `config/defaults.env` and active run choices from
+`config/experiment.env`. Values exported in the shell still override both files.
 
 ```bash
-CONFIG_FILE=config/experiment.env scripts/download_dataset.sh
 SML_ARCH=resnet34 scripts/download_models.sh
 ```
 
@@ -34,10 +33,17 @@ SML_ARCH=resnet34 scripts/download_models.sh
    source .venv/bin/activate
    ```
 
-2. Download a small local dataset:
+2. Download datasets:
 
    ```bash
-   scripts/download_dataset.sh
+   scripts/download_dataset.sh --all
+   ```
+
+   Useful focused variants:
+
+   ```bash
+   scripts/download_dataset.sh --imagenette
+   scripts/download_dataset.sh --imagenetv2
    ```
 
 3. Download model checkpoints:
@@ -52,11 +58,38 @@ SML_ARCH=resnet34 scripts/download_models.sh
    scripts/download_models.sh --all
    ```
 
-The default config downloads Imagenette 160px and saves torchvision checkpoints
-for:
+The default model config saves torchvision checkpoints for:
 
 - SML: `mobilenet_v3_large`
 - LML: `wide_resnet50_2`
+
+## Thesis Dataset
+
+The thesis reproduction requires the real ImageNetV2 Matched Frequency validation
+set, not the placeholder directory created for Docker compatibility.
+
+Download and validate it with:
+
+```bash
+scripts/download_dataset.sh --imagenetv2
+```
+
+Expected validated layout:
+
+```text
+data/datasets/imagenetV2/matched-frequency-format-val/
+  0/
+  1/
+  ...
+  999/
+```
+
+The script checks for `1000` class folders and `10000` images. Use this path in
+`config/experiment.env`:
+
+```env
+SAMPLE_PATH=data/datasets/imagenetV2/matched-frequency-format-val
+```
 
 ## ExPECA Public-IP CPU Baseline
 
@@ -72,13 +105,14 @@ scripts/setup_expeca_notebook_env.sh
 docker login
 ```
 
-Then set the image constants in `config/experiment.env`:
+Then set your registry namespace in `config/experiment.env`:
 
 ```env
 EXPECA_IMAGE_NAMESPACE=YOUR_DOCKERHUB_USERNAME_OR_REGISTRY_NAMESPACE
-EXPECA_IMAGE_TAG=cpu-amd64-001
-EXPECA_IMAGE_PLATFORM=linux/amd64
 ```
+
+The default CPU image tags and platform live in `config/defaults.env`. Change
+those only when publishing a new tag or targeting a different platform.
 
 Build and push:
 

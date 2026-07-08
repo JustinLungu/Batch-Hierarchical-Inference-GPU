@@ -16,6 +16,7 @@ from torchvision import datasets
 from constants import (
     ANALYSIS_DIRNAME,
     CONFIG_FILE,
+    DEFAULT_CONFIG_FILE,
     EDGE_DEVICE_RESULTS_FILENAME,
     EDGE_DEVICE_SCRIPT,
     EDGE_SERVER_SCRIPT,
@@ -79,7 +80,7 @@ class ExperimentRunner:
         self.raw_results_copy = self.analysis_dir / RAW_RESULTS_COPY_FILENAME
 
     def config_files(self) -> list[Path]:
-        return [CONFIG_FILE]
+        return [DEFAULT_CONFIG_FILE, CONFIG_FILE]
 
     def load_config(self) -> dict[str, str]:
         config: dict[str, str] = {}

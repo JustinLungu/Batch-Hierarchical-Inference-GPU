@@ -27,19 +27,21 @@ default path.
    docker login
    ```
 
-3. Open `config/experiment.env` and set the image constants:
+3. Open `config/experiment.env` and set your registry namespace:
 
    ```env
    EXPECA_IMAGE_NAMESPACE=YOUR_DOCKERHUB_USERNAME_OR_REGISTRY_NAMESPACE
-   EXPECA_IMAGE_TAG=cpu-amd64-001
-   EXPECA_IMAGE_PLATFORM=linux/amd64
    ```
+
+   The default CPU image tags and platform live in `config/defaults.env`. Change
+   them only when you intentionally want to publish a new tag or target a
+   different platform.
 
 The scripts will create these image names:
 
 ```text
-YOUR_NAMESPACE/hi-framework-edge-server:YOUR_TAG
-YOUR_NAMESPACE/hi-framework-edge-device:YOUR_TAG
+YOUR_NAMESPACE/hi-framework-edge-server:cpu-amd64-001
+YOUR_NAMESPACE/hi-framework-edge-device:cpu-amd64-001
 ```
 
 For Docker Hub, `<namespace>` is normally your Docker Hub username. For another
@@ -47,13 +49,13 @@ registry, use the full namespace expected by that registry.
 
 ## 2. Prepare Local Assets
 
-Set up the Python environment, download a small dataset, and download all model
+Set up the Python environment, download datasets, and download all model
 checkpoints supported by the current helper scripts:
 
 ```bash
 scripts/setup_env.sh
 source .venv/bin/activate
-scripts/download_dataset.sh
+scripts/download_dataset.sh --all
 scripts/download_models.sh --all
 ```
 
@@ -71,8 +73,9 @@ data/datasets/imagenette/val_renamed/
 data/datasets/imagenetV2/
 ```
 
-`imagenetV2` may only contain a placeholder file for the CPU baseline. That is
-fine; it exists so Docker can copy the expected directory.
+For thesis reproduction, `data/datasets/imagenetV2/` must contain the real
+ImageNetV2 Matched Frequency dataset. `scripts/download_dataset.sh --all`
+downloads and validates it.
 
 ## 3. Prepare the Notebook Environment
 

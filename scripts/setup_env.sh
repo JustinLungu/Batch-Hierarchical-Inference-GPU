@@ -1,16 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-CONFIG_FILE="${CONFIG_FILE:-config/experiment.env}"
-if [[ -f "$CONFIG_FILE" ]]; then
-  while IFS='=' read -r name value; do
-    [[ -z "$name" || "$name" =~ ^[[:space:]]*# ]] && continue
-    [[ "$name" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
-    if [[ -z "${!name+x}" ]]; then
-      export "${name}=${value}"
-    fi
-  done < "$CONFIG_FILE"
-fi
+source scripts/lib/load_env.sh
 
 PYTHON_VERSION="${PYTHON_VERSION:-3.10}"
 VENV_DIR="${VENV_DIR:-.venv}"

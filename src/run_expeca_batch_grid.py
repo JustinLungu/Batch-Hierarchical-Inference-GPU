@@ -6,7 +6,13 @@ from pathlib import Path
 
 import pandas as pd
 
-from constants import CONFIG_FILE, REPO_ROOT, RUN_METADATA_FILENAME, SUMMARY_FILENAME
+from constants import (
+    CONFIG_FILE,
+    DEFAULT_CONFIG_FILE,
+    REPO_ROOT,
+    RUN_METADATA_FILENAME,
+    SUMMARY_FILENAME,
+)
 from run_expeca_public_ip_test import ExpecaPublicIpRunner
 from utils import load_env_file, require_config
 
@@ -19,7 +25,8 @@ def main() -> int:
 class ExpecaBatchGridRunner:
     def __init__(self):
         os.chdir(REPO_ROOT)
-        self.config = load_env_file(CONFIG_FILE)
+        self.config = load_env_file(DEFAULT_CONFIG_FILE)
+        self.config.update(load_env_file(CONFIG_FILE))
         self.device = require_config(self.config, "DEVICE")
         self.results_dir = Path(require_config(self.config, "RESULTS_DIR"))
         self.started_at = datetime.now(timezone.utc)
@@ -151,6 +158,7 @@ class ExpecaBatchGridRunner:
             "finished_at_utc": finished_at.isoformat(),
             "duration_s": (finished_at - self.started_at).total_seconds(),
             "config_file": str(CONFIG_FILE),
+            "default_config_file": str(DEFAULT_CONFIG_FILE),
             "batch_sizes": self.batch_sizes,
             "controller_batch_sizes": self.controller_batch_sizes,
             "pair_mode": self.pair_mode,

@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from constants import REPO_ROOT
+from constants import DEFAULT_CONFIG_FILE, REPO_ROOT
 from utils import load_env_file, require_config
 
 
@@ -31,7 +31,8 @@ def main() -> int:
 class GridComparison:
     def __init__(self):
         os.chdir(REPO_ROOT)
-        self.config = load_env_file(CONFIG_FILE)
+        self.config = load_env_file(DEFAULT_CONFIG_FILE)
+        self.config.update(load_env_file(CONFIG_FILE))
         self.results_dir = Path(require_config(self.config, "RESULTS_DIR"))
         self.output_dir = self.results_dir / COMPARISON_DIRNAME
         self.combined_csv = self.output_dir / "combined_grid_summary.csv"
