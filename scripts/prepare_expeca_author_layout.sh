@@ -67,5 +67,5 @@ echo "Author Dockerfile dataset paths are ready:"
 echo "  ${TARGET_IMAGENETTE_VAL}"
 echo "  ${IMAGENETV2_DIR}"
 echo
-echo "For the first ExPECA CPU baseline, select this dataset inside /app/start.sh:"
+echo "For the thesis reproduction setup, select this dataset inside /app/start.sh:"
 echo "  imagenette/val_renamed/"

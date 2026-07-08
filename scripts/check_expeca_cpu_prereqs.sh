@@ -29,7 +29,7 @@ check_path() {
   fi
 }
 
-echo "Checking ExPECA public-IP CPU baseline prerequisites"
+echo "Checking ExPECA thesis reproduction CPU image prerequisites"
 echo
 
 check_command docker
@@ -65,7 +65,7 @@ echo "INFO EXPECA_IMAGE_PLATFORM=${EXPECA_IMAGE_PLATFORM}"
 
 echo
 if [[ "$failures" -eq 0 ]]; then
-  echo "All ExPECA CPU prerequisites look ready."
+  echo "All ExPECA CPU thesis reproduction prerequisites look ready."
 else
   echo "${failures} prerequisite check(s) failed."
   echo

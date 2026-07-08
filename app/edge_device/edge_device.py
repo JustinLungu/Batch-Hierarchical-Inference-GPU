@@ -15,7 +15,7 @@ from torchvision import transforms, models
 from fastapi.responses import PlainTextResponse, FileResponse
 from fastapi import FastAPI, UploadFile, File, Form
 from torchvision.transforms import InterpolationMode
-from offloading_decision_maker import make_offloading_decision, adaptive_threshold_model
+import offloading_decision_maker
 from sample_offloading_method import offload_sample_method, send_batch_to_server, flush_size_buffer
 
 # Load environment variables
@@ -90,6 +90,12 @@ def clear_results_and_logs():
         logging.root.removeHandler(handler)
     logger = configure_logging()
 
+
+def clear_offloading_buffers():
+    for attribute in ("batch_buffer_size", "dynamic_buffer"):
+        if hasattr(offload_sample_method, attribute):
+            setattr(offload_sample_method, attribute, [])
+
 # Function: Logging configuration
 def configure_logging():
     os.makedirs("results", exist_ok=True)
@@ -148,7 +154,9 @@ async def update_batch_results(batch_results, ts_sample_sent_to_edge_server, ts_
             if cached_config.get("decision_method") == "adaptive_threshold":
                 correct_classification = 1 if res.get("LML Prediction") == entry["SML Prediction"] else 0
                 t8_start = time.time()
-                adaptive_threshold_model.update_thresholds(entry["SML Confidence"], correct_classification)
+                offloading_decision_maker.adaptive_threshold_model.update_thresholds(
+                    entry["SML Confidence"], correct_classification
+                )
                 t8_end = time.time()
 
                 # ts_threshold_updated: Adaptive threshold update time
@@ -236,6 +244,8 @@ async def update_config(new_config: dict):
 
     # Clear previous results and logs for new configuration
     clear_results_and_logs()
+    clear_offloading_buffers()
+    offloading_decision_maker.reset_adaptive_threshold_model()
 
     config = new_config
 
@@ -328,7 +338,7 @@ async def predict(
         )
 
         # Make offloading decision
-        offload_decision = make_offloading_decision(
+        offload_decision = offloading_decision_maker.make_offloading_decision(
             file.filename, confidence_score, decision_method, fixed_threshold
         )
 

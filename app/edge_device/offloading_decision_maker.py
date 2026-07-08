@@ -72,6 +72,11 @@ class AdaptiveThreshold:
 """
 adaptive_threshold_model = AdaptiveThreshold(beta=0.5, eta=0.06, quantize_step=0.01)
 
+
+def reset_adaptive_threshold_model():
+    global adaptive_threshold_model
+    adaptive_threshold_model = AdaptiveThreshold(beta=0.5, eta=0.06, quantize_step=0.01)
+
 # ---- Main Function ----
 
 # Function: Offloading Decision Maker

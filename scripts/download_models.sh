@@ -42,8 +42,8 @@ done
 
 SML_ARCH="${SML_ARCH:-mobilenet_v3_large}"
 SML_MODEL="${SML_MODEL:-data/models/sml/mobilenet_v3_large_imagenet1k_v2.pth}"
-LML_ARCH="${LML_ARCH:-wide_resnet50_2}"
-LML_MODEL="${LML_MODEL:-data/models/lml/Wide_ResNet50_2_Weights_IMAGENET1K_V2.pth}"
+LML_ARCH="${LML_ARCH:-vit_h_14}"
+LML_MODEL="${LML_MODEL:-data/models/lml/ViT_H_14_Weights_IMAGENET1K_SWAG_E2E_V1.pth}"
 
 if [[ ! -x "$PYTHON_BIN" ]]; then
   echo "Python environment not found at ${PYTHON_BIN}"

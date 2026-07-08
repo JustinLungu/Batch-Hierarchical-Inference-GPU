@@ -27,16 +27,10 @@ For managing images there is a version numbering system, which is used to tag th
 `start_local_containers_amd64.ps1` - Starts local Docker containers for AMD64 architecture.  
 `start_local_containers_arm64.ps1` - Starts local Docker containers for ARM64 architecture.  
 
-## Linux Local Docker Smoke Test
+## Current Workflow
 
-For the current local development workflow on Linux, use:
+The current repo workflow is thesis reproduction on ExPECA. Use the runbook in:
 
-```bash
-source .venv/bin/activate
-python src/run_local_docker_test.py
+```text
+docs/thesis_reproduction.md
 ```
-
-This reuses the same controller and result post-processing as the local Python
-script smoke test, but starts `edge_server` and `edge_device` as Docker
-containers. Results are written to `results/analysis_local_docker_cpu/` for
-`DEVICE=cpu`.

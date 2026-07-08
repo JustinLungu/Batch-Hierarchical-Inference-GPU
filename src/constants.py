@@ -5,7 +5,6 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CONFIG_FILE = Path(os.environ.get("DEFAULT_CONFIG_FILE", "config/defaults.env"))
 CONFIG_FILE = Path(os.environ.get("CONFIG_FILE", "config/experiment.env"))
-SMOKE_LOG_DIR = Path("/tmp/bhi-local-smoke")
 
 EDGE_SERVER_SCRIPT = Path("app/edge_server/edge_server.py")
 EDGE_DEVICE_SCRIPT = Path("app/edge_device/edge_device.py")
