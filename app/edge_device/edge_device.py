@@ -161,6 +161,9 @@ async def update_batch_results(batch_results, ts_sample_sent_to_edge_server, ts_
 
                 # ts_threshold_updated: Adaptive threshold update time
                 entry["ts_threshold_updated"] = t8_end - t8_start
+                entry["Adaptive Threshold After Update"] = (
+                    offloading_decision_maker.get_adaptive_threshold()
+                )
                 await async_log_info(f"Sample: {entry['Filename']}, Threshold updated in: {entry['ts_threshold_updated']:.3f}s")
             
             await async_log_info(f"Sample: {entry['Filename']}, Processing completed")
@@ -338,6 +341,12 @@ async def predict(
         )
 
         # Make offloading decision
+        decision_threshold = None
+        if decision_method == "fixed_threshold":
+            decision_threshold = fixed_threshold
+        elif decision_method == "adaptive_threshold":
+            decision_threshold = offloading_decision_maker.get_adaptive_threshold()
+
         offload_decision = offloading_decision_maker.make_offloading_decision(
             file.filename, confidence_score, decision_method, fixed_threshold
         )
@@ -356,6 +365,8 @@ async def predict(
             "Buffered": False,
             "LML Prediction": None,
             "LML Confidence": None,
+            "Decision Threshold": decision_threshold,
+            "Adaptive Threshold After Update": None,
             "ts_sml_inference_start": ts_sml_inference_start,
             "ts_sml_inference_end": ts_sml_inference_end,
             "ts_offload_decision_made": ts_offload_decision_made,

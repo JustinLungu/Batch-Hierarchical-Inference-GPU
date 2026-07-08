@@ -22,6 +22,19 @@ Preview the resolved setup without contacting ExPECA:
 python src/run_thesis_reproduction.py --dry-run
 ```
 
+Outputs are written under:
+
+```text
+results/thesis_reproduction/config_001/
+...
+results/thesis_reproduction/config_007/
+results/thesis_reproduction/summary.csv
+results/thesis_reproduction/latency_breakdown.csv
+results/thesis_reproduction/communication_efficiency.csv
+results/thesis_reproduction/threshold_trajectory.csv
+results/thesis_reproduction/plots/
+```
+
 The reusable implementation lives in:
 
 - `experiment_runner.py`: shared sample sending, timing analysis, summaries, and

@@ -88,6 +88,18 @@ data, not Python code:
 007 adaptive_threshold + dynamic_batching, controller batch 45
 ```
 
+For Configs `005` through `007`, the thesis batch size is the input/controller
+batch size. That means the important field is:
+
+```text
+CONTROLLER_BATCH_SIZE=5
+CONTROLLER_BATCH_SIZE=15
+CONTROLLER_BATCH_SIZE=45
+```
+
+These configs use `OFFLOADING_STRATEGY=dynamic_batching`. They are not the
+size-based batching grid we used earlier.
+
 Config `002` is intentionally kept. In the thesis it is the accuracy upper bound
 and high-latency baseline. For our GPU work it is also the cleanest way to
 isolate large-model/server behavior because every sample is sent to the LML.
@@ -188,13 +200,62 @@ each configuration.
 Aggregate outputs are written to:
 
 ```text
-results/analysis_thesis_reproduction_cpu/summary.csv
-results/analysis_thesis_reproduction_cpu/summary.md
-results/analysis_thesis_reproduction_cpu/run_metadata.json
+results/thesis_reproduction/summary.csv
+results/thesis_reproduction/latency_breakdown.csv
+results/thesis_reproduction/communication_efficiency.csv
+results/thesis_reproduction/threshold_trajectory.csv
+results/thesis_reproduction/summary.md
+results/thesis_reproduction/run_metadata.json
+results/thesis_reproduction/plots/
 ```
 
-Each individual configuration also writes a detailed analysis folder named with
-its config number and strategy.
+Each individual configuration writes a detailed folder:
+
+```text
+results/thesis_reproduction/config_001/
+results/thesis_reproduction/config_002/
+results/thesis_reproduction/config_003/
+results/thesis_reproduction/config_004/
+results/thesis_reproduction/config_005/
+results/thesis_reproduction/config_006/
+results/thesis_reproduction/config_007/
+```
+
+Each config folder contains the raw edge-device CSV, timing CSV, summary, and
+metadata for that one configuration.
+
+`latency_breakdown.csv` is the table behind the thesis-style stacked latency
+plot. It contains:
+
+```text
+Step 1: ED Processing
+Step 2: ED Offload Buffer
+Step 3: ED to ES Communication
+Step 4: ES Processing
+Step 5: ES to ED Communication
+Step 6: ED Result Saving
+```
+
+`communication_efficiency.csv` records offloaded samples, offload
+transmissions, average offload batch size, and transmission reductions relative
+to Config `004`.
+
+`summary.csv` includes accuracy, SML accuracy, LML accuracy for offloaded
+samples, offloading ratio, throughput, and latency aggregates for each config.
+
+`threshold_trajectory.csv` records the adaptive threshold seen by each sample in
+Configs `004` through `007`, plus the post-update threshold when an offloaded
+sample updates the adaptive model.
+
+The plot folder currently contains:
+
+```text
+latency_breakdown_absolute.png
+latency_breakdown_relative.png
+communication_efficiency.png
+threshold_trajectory.png
+throughput.png
+```
 
 ## 7. Repeat With GPU
 
@@ -232,8 +293,11 @@ Run the same command:
 GPU outputs are written to:
 
 ```text
-results/analysis_thesis_reproduction_cuda/
+results/thesis_reproduction/
 ```
 
 The CPU and GPU runs are directly comparable because they use the same thesis
 dataset, model pair, and seven configuration definitions.
+
+If you need to keep CPU and GPU outputs side by side, move or copy
+`results/thesis_reproduction/` after the CPU run before launching the GPU run.

@@ -3,6 +3,6 @@ config_id,decision_method,offloading_strategy,controller_batch_size,batch_size,f
 002,always_offload,send_individually,1,1,0.3888,Always offload; LML accuracy upper bound and server bottleneck baseline.
 003,fixed_threshold,send_individually,1,1,0.3888,Fixed confidence threshold with threshold 0.3888.
 004,adaptive_threshold,send_individually,1,1,0.3888,Adaptive threshold without batching.
-005,adaptive_threshold,dynamic_batching,5,5,0.3888,Adaptive threshold with dynamic batching and initial batch 5.
-006,adaptive_threshold,dynamic_batching,15,15,0.3888,Adaptive threshold with dynamic batching and initial batch 15.
-007,adaptive_threshold,dynamic_batching,45,45,0.3888,Adaptive threshold with dynamic batching and initial batch 45.
+005,adaptive_threshold,dynamic_batching,5,1,0.3888,Adaptive threshold with dynamic batching and initial batch 5.
+006,adaptive_threshold,dynamic_batching,15,1,0.3888,Adaptive threshold with dynamic batching and initial batch 15.
+007,adaptive_threshold,dynamic_batching,45,1,0.3888,Adaptive threshold with dynamic batching and initial batch 45.

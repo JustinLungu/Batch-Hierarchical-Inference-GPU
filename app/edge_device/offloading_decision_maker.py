@@ -77,6 +77,10 @@ def reset_adaptive_threshold_model():
     global adaptive_threshold_model
     adaptive_threshold_model = AdaptiveThreshold(beta=0.5, eta=0.06, quantize_step=0.01)
 
+
+def get_adaptive_threshold():
+    return adaptive_threshold_model.get_threshold()
+
 # ---- Main Function ----
 
 # Function: Offloading Decision Maker

@@ -55,6 +55,13 @@ TIMING_OUTPUT_COLUMNS = [
     "edge_receive_to_saved_s",
     "total_tracked_latency_s",
     "edge_server_batch_id",
+    "True Class",
+    "SML Prediction",
+    "LML Prediction",
+    "SML Confidence",
+    "LML Confidence",
+    "Decision Threshold",
+    "Adaptive Threshold After Update",
 ]
 
 TIMING_DURATIONS = {
