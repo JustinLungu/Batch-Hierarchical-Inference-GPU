@@ -6,11 +6,15 @@ readme = "README.md"
 requires-python = ">=3.10,<3.13"
 dependencies = [
     "fastapi",
+    "jedi",
+    "loguru",
+    "matplotlib",
     "numpy",
     "pandas",
     "pillow",
     "python-dotenv",
     "python-multipart",
+    "python-chi @ git+https://github.com/KTH-EXPECA/python-chi",
     "requests",
     "torch",
     "torchvision",

@@ -12,6 +12,8 @@ The local smoke test code is split by responsibility:
   against already-running containers.
 - `run_expeca_batch_grid.py` runs repeated remote ExPECA experiments across
   configured batch sizes and writes an aggregate comparison table.
+- `compare_grid_results.py` combines CPU/GPU grid summaries and writes
+  comparison CSVs, pivot tables, and optional plots.
 - `constants.py` keeps local paths, filenames, and timing column definitions.
 - `utils.py` keeps small reusable helpers for config, processes, and timing math.
 
@@ -123,3 +125,34 @@ results/analysis_expeca_public_ip_cpu_grid/run_metadata.json
 
 Each grid item also writes its own detailed folder, named by server and
 controller batch size.
+
+## Grid Comparison
+
+After one or more grid runs exist, combine them with:
+
+```bash
+source .venv/bin/activate
+python src/compare_grid_results.py
+```
+
+It discovers folders named like:
+
+```text
+results/analysis_expeca_public_ip_cpu_grid/
+results/analysis_expeca_public_ip_gpu_grid/
+```
+
+and writes:
+
+```text
+results/comparison_expeca_public_ip/combined_grid_summary.csv
+results/comparison_expeca_public_ip/best_by_metric.csv
+results/comparison_expeca_public_ip/*_pivot.csv
+results/comparison_expeca_public_ip/summary.md
+```
+
+If `matplotlib` is installed, it also writes line plots and heatmaps under:
+
+```text
+results/comparison_expeca_public_ip/plots/
+```

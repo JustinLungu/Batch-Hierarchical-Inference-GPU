@@ -105,6 +105,15 @@ The grid is controlled by `BATCH_SIZE_GRID`, `CONTROLLER_BATCH_SIZE`,
 `CONTROLLER_BATCH_SIZE_GRID`, and `BATCH_GRID_PAIR_MODE` in
 `config/experiment.env`.
 
+Combine CPU/GPU grid summaries with:
+
+```bash
+python src/compare_grid_results.py
+```
+
+That command writes long-format comparison CSVs, m-by-n pivot CSVs, and optional
+plots under `results/comparison_expeca_public_ip/`.
+
 ## ExPECA GPU Server Prep
 
 The edge-device image can stay CPU. For GPU experiments, build and push only the

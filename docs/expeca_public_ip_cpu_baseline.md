@@ -312,6 +312,26 @@ The aggregate CSV is the file to use for plotting CPU vs GPU later. It includes
 batch size, controller batch size, rows, throughput, latency, inference time,
 offload roundtrip, and links to each detailed analysis folder.
 
+Create comparison tables and plots from all available CPU/GPU grid summaries:
+
+```bash
+.venv/bin/python src/compare_grid_results.py
+```
+
+This writes:
+
+```text
+results/comparison_expeca_public_ip/combined_grid_summary.csv
+results/comparison_expeca_public_ip/best_by_metric.csv
+results/comparison_expeca_public_ip/summary.md
+results/comparison_expeca_public_ip/plots/
+```
+
+The `combined_grid_summary.csv` is the main long-format table. The pivot CSVs
+are useful when sweeping both `BATCH_SIZE_GRID` and `CONTROLLER_BATCH_SIZE_GRID`
+because rows become controller batch size and columns become server batch size.
+Plots are written when `matplotlib` is installed.
+
 If you want to vary both server batch size and controller request size, set
 `CONTROLLER_BATCH_SIZE_GRID` too:
 

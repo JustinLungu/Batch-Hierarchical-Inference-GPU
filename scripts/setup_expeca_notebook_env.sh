@@ -21,18 +21,8 @@ if ! command -v uv >/dev/null 2>&1; then
   exit 1
 fi
 
-if [[ ! -x "$PYTHON_BIN" ]]; then
-  echo "Python environment not found at ${PYTHON_BIN}"
-  echo "Run scripts/setup_env.sh first, or set PYTHON_BIN."
-  exit 1
-fi
-
-echo "Installing ExPECA notebook dependencies into ${PYTHON_BIN}"
-uv pip install \
-  --python "$PYTHON_BIN" \
-  jedi \
-  loguru \
-  git+https://github.com/KTH-EXPECA/python-chi
+echo "Syncing ExPECA notebook dependencies into ${VENV_DIR}"
+uv sync
 
 echo
 echo "ExPECA notebook environment ready."
