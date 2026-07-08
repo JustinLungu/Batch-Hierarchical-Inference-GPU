@@ -1,6 +1,7 @@
+# syntax=docker/dockerfile:1.7
 # Dockerfile for the edge device
 
-FROM python:3.9-slim
+FROM python:3.10-slim
 
 WORKDIR /app
 
@@ -12,8 +13,13 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/* && \
     mkdir -p /var/run/sshd results
 
+# Install Python dependencies before copying app/model/dataset files so source
+# changes do not force a dependency reinstall.
+COPY requirements-docker-cpu.txt ./requirements.txt
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install -r requirements.txt
+
 # Copy edge device application files
-COPY requirements.txt ./
 COPY app/edge_device/edge_device.py ./edge_device/
 COPY app/edge_server/edge_server.py ./edge_server/
 COPY app/edge_device/offloading_decision_maker.py ./edge_device/
@@ -29,9 +35,6 @@ COPY app/controller_internal/start.sh ./
 COPY data/models/sml/ ./data/models/sml/
 COPY data/datasets/imagenetV2/ ./data/datasets/imagenetV2/
 COPY data/datasets/imagenette/val_renamed/ ./data/datasets/imagenette/val_renamed/
-
-# Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
 
 # Make the entrypoint scripts executable
 RUN chmod +x entrypoint_edge_device.sh

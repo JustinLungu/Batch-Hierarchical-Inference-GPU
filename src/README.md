@@ -35,6 +35,15 @@ results/thesis_reproduction/threshold_trajectory.csv
 results/thesis_reproduction/plots/
 ```
 
+Regenerate only the thesis-style plots from existing CSV outputs:
+
+```bash
+python src/run_thesis_reproduction.py --plot-only
+```
+
+The plot folder contains Figure 5-1 through Figure 5-6 equivalents using the
+same visual structure as the thesis.
+
 The reusable implementation lives in:
 
 - `experiment_runner.py`: shared sample sending, timing analysis, summaries, and

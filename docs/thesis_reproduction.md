@@ -245,17 +245,39 @@ samples, offloading ratio, throughput, and latency aggregates for each config.
 
 `threshold_trajectory.csv` records the adaptive threshold seen by each sample in
 Configs `004` through `007`, plus the post-update threshold when an offloaded
-sample updates the adaptive model.
+sample updates the adaptive model. During labeled thesis reproduction runs, the
+adaptive update uses `SML Prediction == True Class` as the correctness feedback.
 
-The plot folder currently contains:
+The plot folder contains thesis-style figures:
 
 ```text
-latency_breakdown_absolute.png
-latency_breakdown_relative.png
-communication_efficiency.png
-threshold_trajectory.png
-throughput.png
+figure_5_1_accuracy_comparison.png
+figure_5_2_offloading_decision_distributions.png
+figure_5_3_threshold_value_updates.png
+figure_5_4_per_sample_latency_comparison.png
+figure_5_5_latency_breakdown.png
+figure_5_6_throughput_processing_time.png
 ```
+
+Regenerate only the figures from existing CSV outputs with:
+
+```bash
+.venv/bin/python src/run_thesis_reproduction.py --plot-only
+```
+
+If `figure_5_3_threshold_value_updates.png` is empty, check whether the
+per-config raw/timing CSVs contain `Decision Threshold` or
+`Adaptive Threshold After Update`. Older edge-device images did not save these
+columns. By default, the plot-only command preserves only the values actually
+logged by the edge-device. A best-effort offline replay is available only when
+explicitly requested:
+
+```bash
+.venv/bin/python src/run_thesis_reproduction.py --plot-only --reconstruct-thresholds
+```
+
+For thesis reproduction, prefer rebuilding/recreating the edge-device container
+so the raw CSV contains the real logged values.
 
 ## 7. Repeat With GPU
 

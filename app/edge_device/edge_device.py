@@ -152,7 +152,11 @@ async def update_batch_results(batch_results, ts_sample_sent_to_edge_server, ts_
             
             # Adaptive threshold update feedback loop
             if cached_config.get("decision_method") == "adaptive_threshold":
-                correct_classification = 1 if res.get("LML Prediction") == entry["SML Prediction"] else 0
+                true_class = entry.get("True Class")
+                if true_class is not None:
+                    correct_classification = 1 if entry["SML Prediction"] == int(true_class) else 0
+                else:
+                    correct_classification = 1 if res.get("LML Prediction") == entry["SML Prediction"] else 0
                 t8_start = time.time()
                 offloading_decision_maker.adaptive_threshold_model.update_thresholds(
                     entry["SML Confidence"], correct_classification
@@ -415,8 +419,6 @@ async def predict(
         else:
             # ts_results_saved_not_offloaded: Timestamp for Final result completed for non-offloaded sample
             results[sample_uuid]["ts_results_saved_not_offloaded"] = time.time()
-            df_new_row = pd.DataFrame([results[sample_uuid]])
-            await write_csv_async(df_new_row, RESULTS_CSV)
             await async_log_info(f"Sample: {file.filename}, Processing completed")
 
     # If offloading logic is dynamic batching and there are samples waiting in the buffer:

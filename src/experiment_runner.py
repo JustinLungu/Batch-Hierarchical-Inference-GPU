@@ -204,7 +204,7 @@ class ExperimentRunner:
             if max_samples is not None and len(image_records) >= max_samples:
                 break
             if self.is_valid_image(image_path):
-                image_records.append((image_path, class_index))
+                image_records.append((image_path, self.true_class_label(image_path, class_index)))
 
         if not image_records:
             raise RuntimeError(f"No valid images found in {sample_path}.")
@@ -256,6 +256,8 @@ class ExperimentRunner:
 
     def load_raw_results(self) -> pd.DataFrame:
         results = pd.read_csv(self.raw_results_csv)
+        if "UUID" in results.columns:
+            results = results.drop_duplicates(subset=["UUID"], keep="last")
         for column in TIMING_COLUMNS:
             if column in results.columns:
                 results[column] = pd.to_numeric(results[column], errors="coerce")
@@ -460,6 +462,17 @@ class ExperimentRunner:
             return True
         except (UnidentifiedImageError, OSError):
             return False
+
+    @staticmethod
+    def true_class_label(image_path: str, class_index: int) -> int:
+        parent_name = Path(image_path).parent.name
+        if parent_name.isdigit():
+            return int(parent_name)
+        if parent_name.startswith("class_"):
+            suffix = parent_name.removeprefix("class_")
+            if suffix.isdigit():
+                return int(suffix)
+        return class_index
 
     @staticmethod
     def git_commit() -> str | None:

@@ -60,8 +60,11 @@ TIMING_OUTPUT_COLUMNS = [
     "LML Prediction",
     "SML Confidence",
     "LML Confidence",
+    "Offloaded",
+    "Buffered",
     "Decision Threshold",
     "Adaptive Threshold After Update",
+    "ts_threshold_updated",
 ]
 
 TIMING_DURATIONS = {

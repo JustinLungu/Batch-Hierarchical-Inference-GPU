@@ -3,6 +3,8 @@ set -euo pipefail
 
 source scripts/lib/load_env.sh
 
+export DOCKER_BUILDKIT="${DOCKER_BUILDKIT:-1}"
+
 EXPECA_IMAGE_NAMESPACE="${EXPECA_IMAGE_NAMESPACE:-}"
 EXPECA_IMAGE_TAG="${EXPECA_IMAGE_TAG:-cpu-amd64-001}"
 EXPECA_IMAGE_PLATFORM="${EXPECA_IMAGE_PLATFORM:-linux/amd64}"

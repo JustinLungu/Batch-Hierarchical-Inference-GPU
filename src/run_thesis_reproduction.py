@@ -61,6 +61,55 @@ class ThesisConfiguration:
         }
 
 
+class AdaptiveThresholdReplay:
+    def __init__(self, beta: float = 0.5, eta: float = 0.06, quantize_step: float = 0.01):
+        self.beta = beta
+        self.eta = eta
+        self.quantize_step = quantize_step
+        self.p_intervals = [0.0, 0.75, 1.0]
+        self.weights = [1.0, 1.0]
+
+    def update_thresholds(self, confidence_score: float, correct_classification: int) -> None:
+        import bisect
+        import math
+
+        confidence_score = round(confidence_score / self.quantize_step) * self.quantize_step
+        confidence_score = min(max(confidence_score, 0.0), 1.0)
+
+        idx = bisect.bisect_right(self.p_intervals, confidence_score) - 1
+        if confidence_score not in self.p_intervals:
+            self.p_intervals.insert(idx + 1, confidence_score)
+            self.weights.insert(idx + 1, self.weights[idx])
+
+        for index in range(len(self.weights)):
+            if self.p_intervals[index + 1] <= confidence_score:
+                cost = self.beta if correct_classification == 0 else 0.0
+            else:
+                cost = self.beta if correct_classification == 1 else 0.0
+            self.weights[index] *= math.exp(-self.eta * cost)
+
+        total_weight = sum(
+            (self.p_intervals[index + 1] - self.p_intervals[index]) * self.weights[index]
+            for index in range(len(self.weights))
+        )
+        self.weights = [weight / total_weight for weight in self.weights]
+
+    def get_threshold(self) -> float:
+        cumulative_weight = 0.0
+        total_weight = sum(
+            (self.p_intervals[index + 1] - self.p_intervals[index]) * self.weights[index]
+            for index in range(len(self.weights))
+        )
+
+        for index in range(len(self.weights)):
+            cumulative_weight += (
+                self.p_intervals[index + 1] - self.p_intervals[index]
+            ) * self.weights[index]
+            if cumulative_weight >= 0.5 * total_weight:
+                return self.p_intervals[index + 1]
+        return 1.0
+
+
 class ThesisPublicIpRun(ExperimentRunner):
     MODE = "expeca_public_ip_thesis"
     RUN_LABEL = "thesis"
@@ -112,14 +161,38 @@ def main() -> int:
         action="store_true",
         help="Validate assets and print the seven thesis configurations without sending requests.",
     )
+    parser.add_argument(
+        "--plot-only",
+        action="store_true",
+        help="Regenerate thesis-style plots from existing CSV outputs without rerunning ExPECA.",
+    )
+    parser.add_argument(
+        "--reconstruct-thresholds",
+        action="store_true",
+        help=(
+            "With --plot-only, reconstruct missing threshold values from timing CSVs. "
+            "Default behavior preserves only values logged by the edge-device."
+        ),
+    )
     args = parser.parse_args()
-    return ThesisReproductionRunner(dry_run=args.dry_run).run()
+    return ThesisReproductionRunner(
+        dry_run=args.dry_run,
+        plot_only=args.plot_only,
+        reconstruct_thresholds=args.reconstruct_thresholds,
+    ).run()
 
 
 class ThesisReproductionRunner:
-    def __init__(self, dry_run: bool = False):
+    def __init__(
+        self,
+        dry_run: bool = False,
+        plot_only: bool = False,
+        reconstruct_thresholds: bool = False,
+    ):
         os.chdir(REPO_ROOT)
         self.dry_run = dry_run
+        self.plot_only = plot_only
+        self.reconstruct_thresholds = reconstruct_thresholds
         self.config = load_env_file(DEFAULT_CONFIG_FILE)
         self.config.update(load_env_file(CONFIG_FILE))
         self.thesis_base = load_env_file(THESIS_REPRODUCTION_FILE)
@@ -135,6 +208,10 @@ class ThesisReproductionRunner:
             self.output_dir / "communication_efficiency.csv"
         )
         self.threshold_trajectory_csv = self.output_dir / "threshold_trajectory.csv"
+        self.offloading_distribution_csv = (
+            self.output_dir / "offloading_distribution.csv"
+        )
+        self.per_sample_latency_csv = self.output_dir / "per_sample_latency.csv"
         self.summary_md = self.output_dir / "summary.md"
         self.metadata_json = self.output_dir / RUN_METADATA_FILENAME
         self.plots_dir = self.output_dir / "plots"
@@ -143,6 +220,9 @@ class ThesisReproductionRunner:
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.plots_dir.mkdir(parents=True, exist_ok=True)
         self.validate_assets()
+
+        if self.plot_only:
+            return self.regenerate_plots_from_csv()
 
         if self.dry_run:
             self.print_dry_run()
@@ -159,6 +239,8 @@ class ThesisReproductionRunner:
         latency_rows = []
         communication_rows = []
         threshold_rows = []
+        offloading_distribution_rows = []
+        per_sample_latency_rows = []
         for index, thesis_config in enumerate(self.configurations, start=1):
             print(
                 f"[{index}/{len(self.configurations)}] "
@@ -202,6 +284,12 @@ class ThesisReproductionRunner:
                 self.communication_efficiency_row(thesis_config, timing, row)
             )
             threshold_rows.extend(self.threshold_trajectory_rows(thesis_config, timing))
+            offloading_distribution_rows.append(
+                self.offloading_distribution_row(thesis_config, timing)
+            )
+            per_sample_latency_rows.append(
+                self.per_sample_latency_row(thesis_config, timing)
+            )
             print()
 
         summary = pd.DataFrame(rows).sort_values("thesis_config")
@@ -211,13 +299,24 @@ class ThesisReproductionRunner:
             communication_efficiency
         )
         threshold_trajectory = pd.DataFrame(threshold_rows)
+        offloading_distribution = pd.DataFrame(offloading_distribution_rows).sort_values(
+            "config"
+        )
+        per_sample_latency = pd.DataFrame(per_sample_latency_rows).sort_values("config")
 
         summary.to_csv(self.summary_csv, index=False)
         latency_breakdown.to_csv(self.latency_breakdown_csv, index=False)
         communication_efficiency.to_csv(self.communication_efficiency_csv, index=False)
         threshold_trajectory.to_csv(self.threshold_trajectory_csv, index=False)
+        offloading_distribution.to_csv(self.offloading_distribution_csv, index=False)
+        per_sample_latency.to_csv(self.per_sample_latency_csv, index=False)
         plot_paths = self.write_plots(
-            latency_breakdown, communication_efficiency, threshold_trajectory
+            summary,
+            latency_breakdown,
+            communication_efficiency,
+            threshold_trajectory,
+            offloading_distribution,
+            per_sample_latency,
         )
         self.write_summary_md(summary, latency_breakdown, communication_efficiency)
         self.write_metadata(summary, plot_paths)
@@ -227,11 +326,147 @@ class ThesisReproductionRunner:
         print(f"Wrote latency breakdown CSV: {self.latency_breakdown_csv}")
         print(f"Wrote communication efficiency CSV: {self.communication_efficiency_csv}")
         print(f"Wrote threshold trajectory CSV: {self.threshold_trajectory_csv}")
+        print(f"Wrote offloading distribution CSV: {self.offloading_distribution_csv}")
+        print(f"Wrote per-sample latency CSV: {self.per_sample_latency_csv}")
         print(f"Wrote aggregate summary: {self.summary_md}")
         print(f"Wrote aggregate metadata: {self.metadata_json}")
         if plot_paths:
             print(f"Wrote {len(plot_paths)} plot(s): {self.plots_dir}")
         return 0
+
+    def regenerate_plots_from_csv(self) -> int:
+        required = [
+            self.summary_csv,
+            self.latency_breakdown_csv,
+            self.communication_efficiency_csv,
+            self.threshold_trajectory_csv,
+        ]
+        missing = [path for path in required if not path.exists()]
+        if missing:
+            formatted = "\n".join(f"  - {path}" for path in missing)
+            raise RuntimeError(
+                "Cannot regenerate plots because existing result CSV(s) are missing:\n"
+                f"{formatted}\n"
+                "Run `.venv/bin/python src/run_thesis_reproduction.py` first."
+            )
+
+        if not self.offloading_distribution_csv.exists():
+            rows = []
+            for config in self.configurations:
+                timing = self.read_config_timing(config.config_id)
+                rows.append(self.offloading_distribution_row(config, timing))
+            pd.DataFrame(rows).sort_values("config").to_csv(
+                self.offloading_distribution_csv, index=False
+            )
+            print(f"Backfilled missing CSV: {self.offloading_distribution_csv}")
+
+        if not self.per_sample_latency_csv.exists():
+            rows = []
+            for config in self.configurations:
+                timing = self.read_config_timing(config.config_id)
+                rows.append(self.per_sample_latency_row(config, timing))
+            pd.DataFrame(rows).sort_values("config").to_csv(
+                self.per_sample_latency_csv, index=False
+            )
+            print(f"Backfilled missing CSV: {self.per_sample_latency_csv}")
+
+        threshold_trajectory = pd.read_csv(
+            self.threshold_trajectory_csv, dtype={"config": str}
+        )
+        if self.threshold_trajectory_needs_rebuild(threshold_trajectory):
+            if not self.reconstruct_thresholds:
+                print(
+                    "Threshold trajectory has no logged threshold values. "
+                    "Preserving original CSV; rerun with a rebuilt edge-device image "
+                    "or pass --reconstruct-thresholds for a best-effort offline replay."
+                )
+            else:
+                threshold_trajectory = self.reconstruct_threshold_trajectory_from_timing()
+                threshold_trajectory.to_csv(self.threshold_trajectory_csv, index=False)
+                print(f"Reconstructed threshold trajectory: {self.threshold_trajectory_csv}")
+
+        summary = pd.read_csv(self.summary_csv, dtype={"thesis_config": str})
+        summary = self.backfill_summary_accuracy_columns(summary)
+        summary.to_csv(self.summary_csv, index=False)
+
+        plot_paths = self.write_plots(
+            summary,
+            pd.read_csv(self.latency_breakdown_csv, dtype={"config": str}),
+            pd.read_csv(self.communication_efficiency_csv, dtype={"config": str}),
+            threshold_trajectory,
+            pd.read_csv(self.offloading_distribution_csv, dtype={"config": str}),
+            pd.read_csv(self.per_sample_latency_csv, dtype={"config": str}),
+        )
+        print(f"Regenerated {len(plot_paths)} thesis-style plot(s): {self.plots_dir}")
+        for path in plot_paths:
+            print(f"  {path}")
+        return 0
+
+    def reconstruct_threshold_trajectory_from_timing(self) -> pd.DataFrame:
+        rows = []
+        for config in self.configurations:
+            rows.extend(
+                self.threshold_trajectory_rows(
+                    config, self.read_config_timing(config.config_id)
+                )
+            )
+        return pd.DataFrame(rows)
+
+    def backfill_summary_accuracy_columns(self, summary: pd.DataFrame) -> pd.DataFrame:
+        accuracy_columns = [
+            "accuracy",
+            "sml_accuracy",
+            "lml_accuracy_offloaded",
+            "sml_accuracy_not_offloaded",
+            "correct",
+        ]
+        needs_backfill = any(column not in summary for column in accuracy_columns)
+        if not needs_backfill:
+            needs_backfill = summary[accuracy_columns].isna().any().any()
+        if not needs_backfill:
+            return summary
+
+        output = summary.copy()
+        for column in accuracy_columns:
+            if column not in output:
+                output[column] = pd.NA
+
+        for config in self.configurations:
+            mask = output["thesis_config"].astype(str).str.zfill(3) == config.config_id
+            if not mask.any():
+                continue
+            metrics = self.accuracy_metrics(self.read_config_timing(config.config_id))
+            for column, value in metrics.items():
+                if column in output:
+                    output.loc[mask, column] = value
+
+        print(f"Backfilled missing accuracy column(s) in: {self.summary_csv}")
+        return output
+
+    @staticmethod
+    def threshold_trajectory_needs_rebuild(threshold_trajectory: pd.DataFrame) -> bool:
+        if threshold_trajectory.empty:
+            return True
+        threshold_columns = [
+            column
+            for column in [
+                "decision_threshold",
+                "adaptive_threshold_after_update",
+            ]
+            if column in threshold_trajectory
+        ]
+        if not threshold_columns:
+            return True
+        values = threshold_trajectory[threshold_columns].apply(
+            pd.to_numeric, errors="coerce"
+        )
+        return not values.notna().any().any()
+
+    def read_config_timing(self, config_id: str) -> pd.DataFrame:
+        timing_csv = self.output_dir / f"config_{config_id}" / TIMING_RESULTS_FILENAME
+        if not timing_csv.exists():
+            raise RuntimeError(f"Missing per-config timing CSV: {timing_csv}")
+        return pd.read_csv(timing_csv)
 
     def load_thesis_configurations(self) -> list[ThesisConfiguration]:
         if not THESIS_CONFIG_FILE.exists():
@@ -350,8 +585,7 @@ class ThesisReproductionRunner:
         true_class = pd.to_numeric(timing["True Class"], errors="coerce")
         sml_prediction = pd.to_numeric(timing.get("SML Prediction"), errors="coerce")
         lml_prediction = pd.to_numeric(timing.get("LML Prediction"), errors="coerce")
-        offloaded = timing.get("Offloaded", pd.Series([False] * len(timing)))
-        offloaded = offloaded.astype(str).str.lower().eq("true")
+        offloaded = self.offloaded_mask(timing)
         final_prediction = sml_prediction.copy()
         final_prediction.loc[offloaded] = lml_prediction.loc[offloaded]
 
@@ -369,8 +603,30 @@ class ThesisReproductionRunner:
             "lml_accuracy_offloaded": (
                 float(lml_correct / valid_lml.sum()) if valid_lml.any() else None
             ),
+            "sml_accuracy_not_offloaded": self.group_accuracy(
+                true_class, sml_prediction, ~offloaded
+            ),
             "correct": int(correct),
         }
+
+    @staticmethod
+    def group_accuracy(
+        true_class: pd.Series, prediction: pd.Series, mask: pd.Series
+    ) -> float | None:
+        valid = true_class.notna() & prediction.notna() & mask
+        if not valid.any():
+            return None
+        return float((prediction[valid] == true_class[valid]).mean())
+
+    @staticmethod
+    def offloaded_mask(timing: pd.DataFrame) -> pd.Series:
+        if "Offloaded" in timing.columns:
+            return timing["Offloaded"].astype(str).str.lower().eq("true")
+        if "LML Prediction" in timing.columns:
+            return pd.to_numeric(timing["LML Prediction"], errors="coerce").notna()
+        if "lml_inference_s" in timing.columns:
+            return pd.to_numeric(timing["lml_inference_s"], errors="coerce").notna()
+        return pd.Series([False] * len(timing), index=timing.index)
 
     def communication_efficiency_row(
         self,
@@ -379,7 +635,7 @@ class ThesisReproductionRunner:
         summary_row: dict,
     ) -> dict:
         rows = len(timing)
-        offloaded = self.count_true(timing, "Offloaded") or 0
+        offloaded = int(self.offloaded_mask(timing).sum())
         transmissions = int(summary_row.get("edge_server_batches_observed") or 0)
         average_offload_batch = offloaded / transmissions if transmissions else 0.0
         offload_ratio = offloaded / rows if rows else 0.0
@@ -403,7 +659,7 @@ class ThesisReproductionRunner:
         self, timing: pd.DataFrame, summary_row: dict
     ) -> dict:
         rows = len(timing)
-        offloaded = self.count_true(timing, "Offloaded") or 0
+        offloaded = int(self.offloaded_mask(timing).sum())
         transmissions = int(summary_row.get("edge_server_batches_observed") or 0)
         return {
             "offload_ratio": offloaded / rows if rows else 0.0,
@@ -420,26 +676,91 @@ class ThesisReproductionRunner:
             return []
 
         rows = []
+        adaptive_replay = AdaptiveThresholdReplay()
+        offloaded = self.offloaded_mask(timing)
         for sample_index, (_, row) in enumerate(timing.iterrows(), start=1):
+            confidence = self.optional_float(row.get("SML Confidence"))
+            decision_threshold = self.optional_float(row.get("Decision Threshold"))
+            if decision_threshold is None:
+                decision_threshold = adaptive_replay.get_threshold()
+
+            adaptive_threshold_after_update = self.optional_float(
+                row.get("Adaptive Threshold After Update")
+            )
+            sample_offloaded = bool(offloaded.loc[row.name])
+            if sample_offloaded and confidence is not None:
+                true_class = self.optional_float(row.get("True Class"))
+                sml_prediction = self.optional_float(row.get("SML Prediction"))
+                lml_prediction = self.optional_float(row.get("LML Prediction"))
+                if true_class is not None and sml_prediction is not None:
+                    correct_classification = int(sml_prediction == true_class)
+                    adaptive_replay.update_thresholds(confidence, correct_classification)
+                    if adaptive_threshold_after_update is None:
+                        adaptive_threshold_after_update = adaptive_replay.get_threshold()
+                elif sml_prediction is not None and lml_prediction is not None:
+                    correct_classification = int(lml_prediction == sml_prediction)
+                    adaptive_replay.update_thresholds(confidence, correct_classification)
+                    if adaptive_threshold_after_update is None:
+                        adaptive_threshold_after_update = adaptive_replay.get_threshold()
+
             rows.append(
                 {
                     "config": config.config_id,
                     "sample_index": sample_index,
                     "filename": row.get("Filename"),
-                    "sml_confidence": self.optional_float(row.get("SML Confidence")),
-                    "offloaded": str(row.get("Offloaded")).lower() == "true",
-                    "decision_threshold": self.optional_float(
-                        row.get("Decision Threshold")
-                    ),
-                    "adaptive_threshold_after_update": self.optional_float(
-                        row.get("Adaptive Threshold After Update")
-                    ),
+                    "sml_confidence": confidence,
+                    "offloaded": sample_offloaded,
+                    "decision_threshold": decision_threshold,
+                    "adaptive_threshold_after_update": adaptive_threshold_after_update,
                     "threshold_update_duration_s": self.optional_float(
                         row.get("ts_threshold_updated")
                     ),
                 }
             )
         return rows
+
+    def offloading_distribution_row(
+        self, config: ThesisConfiguration, timing: pd.DataFrame
+    ) -> dict:
+        true_class = pd.to_numeric(timing.get("True Class"), errors="coerce")
+        sml_prediction = pd.to_numeric(timing.get("SML Prediction"), errors="coerce")
+        offloaded = self.offloaded_mask(timing)
+        sml_correct = true_class.notna() & sml_prediction.notna() & (
+            sml_prediction == true_class
+        )
+        sml_wrong = true_class.notna() & sml_prediction.notna() & (
+            sml_prediction != true_class
+        )
+        total = max(len(timing), 1)
+
+        true_positive = int((sml_wrong & offloaded).sum())
+        true_negative = int((sml_correct & ~offloaded).sum())
+        false_positive = int((sml_correct & offloaded).sum())
+        false_negative = int((sml_wrong & ~offloaded).sum())
+
+        return {
+            "config": config.config_id,
+            "true_positive": true_positive,
+            "true_negative": true_negative,
+            "false_positive": false_positive,
+            "false_negative": false_negative,
+            "true_positive_percent": 100.0 * true_positive / total,
+            "true_negative_percent": 100.0 * true_negative / total,
+            "false_positive_percent": 100.0 * false_positive / total,
+            "false_negative_percent": 100.0 * false_negative / total,
+        }
+
+    def per_sample_latency_row(
+        self, config: ThesisConfiguration, timing: pd.DataFrame
+    ) -> dict:
+        offloaded = self.offloaded_mask(timing)
+        latency = pd.to_numeric(timing["total_tracked_latency_s"], errors="coerce")
+        return {
+            "config": config.config_id,
+            "system_combined_s": self.series_mean(latency),
+            "offloaded_samples_s": self.series_mean(latency[offloaded]),
+            "not_offloaded_samples_s": self.series_mean(latency[~offloaded]),
+        }
 
     def add_communication_baselines(self, communication: pd.DataFrame) -> pd.DataFrame:
         output = communication.copy()
@@ -455,22 +776,230 @@ class ThesisReproductionRunner:
 
     def write_plots(
         self,
+        summary: pd.DataFrame,
         latency_breakdown: pd.DataFrame,
         communication_efficiency: pd.DataFrame,
         threshold_trajectory: pd.DataFrame,
+        offloading_distribution: pd.DataFrame,
+        per_sample_latency: pd.DataFrame,
     ) -> list[Path]:
+        matplotlib_cache = Path("/tmp") / "matplotlib-thesis-reproduction"
+        matplotlib_cache.mkdir(parents=True, exist_ok=True)
+        os.environ.setdefault("MPLCONFIGDIR", str(matplotlib_cache))
+
         try:
             import matplotlib.pyplot as plt
         except ModuleNotFoundError:
             return []
 
+        for stale_plot in self.plots_dir.glob("*.png"):
+            stale_plot.unlink()
+
         return [
+            self.write_accuracy_comparison_plot(plt, summary),
+            self.write_offloading_distribution_plot(plt, offloading_distribution),
+            self.write_threshold_value_updates_plot(plt, threshold_trajectory),
+            self.write_per_sample_latency_plot(plt, per_sample_latency),
             self.write_latency_breakdown_plot(plt, latency_breakdown),
-            self.write_latency_breakdown_relative_plot(plt, latency_breakdown),
-            self.write_communication_efficiency_plot(plt, communication_efficiency),
-            self.write_throughput_plot(plt),
-            self.write_threshold_trajectory_plot(plt, threshold_trajectory),
+            self.write_throughput_processing_time_plot(plt, summary, per_sample_latency),
         ]
+
+    @staticmethod
+    def apply_thesis_axes_style(axis) -> None:
+        axis.grid(axis="y", linestyle="--", alpha=0.6)
+        axis.set_axisbelow(True)
+
+    @staticmethod
+    def add_figure_caption(figure, figure_id: str, title: str) -> None:
+        figure.subplots_adjust(bottom=0.18)
+        figure.text(0.42, 0.035, figure_id, ha="right", fontsize=14, fontweight="bold")
+        figure.text(0.50, 0.035, title, ha="left", fontsize=14, fontweight="bold")
+
+    @staticmethod
+    def annotate_bars(axis, bars, fmt="{:.1f}", rotation=25, color="black") -> None:
+        for bar in bars:
+            height = bar.get_height()
+            if pd.isna(height) or height == 0:
+                continue
+            axis.text(
+                bar.get_x() + bar.get_width() / 2,
+                height,
+                fmt.format(height),
+                ha="center",
+                va="bottom",
+                rotation=rotation,
+                fontsize=8,
+                color=color,
+            )
+
+    def write_accuracy_comparison_plot(self, plt, summary: pd.DataFrame) -> Path:
+        import numpy as np
+
+        configs = summary["thesis_config"].tolist()
+        x_values = np.arange(len(configs))
+        width = 0.18
+        series = [
+            ("System Overall", "accuracy", "#1f77b4", -1.5 * width),
+            ("S-M-L - All Samples", "sml_accuracy", "#ff7f0e", -0.5 * width),
+            ("S-M-L - Not Offloaded Samples", "sml_accuracy_not_offloaded", "#2ca02c", 0.5 * width),
+            ("L-M-L - Offloaded Samples", "lml_accuracy_offloaded", "#d62728", 1.5 * width),
+        ]
+
+        figure, axis = plt.subplots(figsize=(11, 7))
+        max_accuracy = 0.0
+        for label, column, color, offset in series:
+            if column in summary:
+                values = pd.to_numeric(summary[column], errors="coerce") * 100.0
+            else:
+                values = pd.Series([float("nan")] * len(summary), index=summary.index)
+            if not values.dropna().empty:
+                max_accuracy = max(max_accuracy, float(values.max()))
+            bars = axis.bar(x_values + offset, values, width, label=label, color=color)
+            self.annotate_bars(axis, bars)
+
+        axis.set_title("Accuracy Comparison")
+        axis.set_xlabel("Configuration")
+        axis.set_ylabel("Accuracy (%)")
+        axis.set_xticks(x_values)
+        axis.set_xticklabels(configs)
+        axis.set_ylim(0, max(95, max_accuracy + 8))
+        axis.legend(loc="lower left")
+        self.apply_thesis_axes_style(axis)
+        self.add_figure_caption(figure, "Figure 5-1", "Accuracy Comparison")
+
+        path = self.plots_dir / "figure_5_1_accuracy_comparison.png"
+        figure.savefig(path, dpi=160)
+        plt.close(figure)
+        return path
+
+    def write_offloading_distribution_plot(
+        self, plt, distribution: pd.DataFrame
+    ) -> Path:
+        thesis_configs = distribution[distribution["config"].isin(["003", "004", "005", "006", "007"])]
+        configs = thesis_configs["config"].tolist()
+        stack = [
+            ("True Positive (SML wrong + Offloaded)", "true_positive_percent", "#006400"),
+            ("True Negative (SML correct + Not offloaded)", "true_negative_percent", "#2ca02c"),
+            ("False Positive (SML correct + Offloaded)", "false_positive_percent", "#e18124"),
+            ("False Negative (SML wrong + Not offloaded)", "false_negative_percent", "#d62728"),
+        ]
+
+        figure, axis = plt.subplots(figsize=(11, 7))
+        bottoms = pd.Series([0.0] * len(thesis_configs), index=thesis_configs.index)
+        for label, column, color in stack:
+            values = pd.to_numeric(thesis_configs[column], errors="coerce").fillna(0.0)
+            bars = axis.bar(configs, values, bottom=bottoms, label=label, color=color)
+            for idx, bar in enumerate(bars):
+                height = bar.get_height()
+                if height <= 0:
+                    continue
+                axis.text(
+                    bar.get_x() + bar.get_width() / 2,
+                    bottoms.iloc[idx] + height / 2,
+                    f"{height:.1f}%",
+                    ha="center",
+                    va="center",
+                    fontsize=8,
+                    color="white",
+                    fontweight="bold",
+                )
+            bottoms += values
+
+        axis.set_title("Offloading Classification Distribution")
+        axis.set_xlabel("Configuration")
+        axis.set_ylabel("Samples (%)")
+        axis.set_ylim(0, 100)
+        axis.legend(loc="upper left", bbox_to_anchor=(0.02, -0.08))
+        self.apply_thesis_axes_style(axis)
+        self.add_figure_caption(figure, "Figure 5-2", "Offloading Decision Distributions")
+
+        path = self.plots_dir / "figure_5_2_offloading_decision_distributions.png"
+        figure.savefig(path, dpi=160)
+        plt.close(figure)
+        return path
+
+    def write_threshold_value_updates_plot(
+        self, plt, threshold_trajectory: pd.DataFrame
+    ) -> Path:
+        figure, axis = plt.subplots(figsize=(12, 5))
+        colors = {
+            "004": "#1f77b4",
+            "005": "#ff7f0e",
+            "006": "#2ca02c",
+            "007": "#d62728",
+        }
+        if not threshold_trajectory.empty:
+            for config, group in threshold_trajectory.groupby("config"):
+                values = pd.to_numeric(group["decision_threshold"], errors="coerce")
+                values = values.fillna(
+                    pd.to_numeric(group["adaptive_threshold_after_update"], errors="coerce")
+                ).dropna()
+                if values.empty:
+                    continue
+                x_values = pd.Series(range(len(values)), index=values.index)
+                if len(values) > 1:
+                    x_values = x_values / (len(values) - 1)
+                smooth = values.rolling(window=max(1, min(25, len(values) // 5)), min_periods=1).mean()
+                std = values.rolling(window=max(2, min(25, len(values) // 5)), min_periods=1).std().fillna(0.0)
+                color = colors.get(str(config), None)
+                axis.plot(x_values, smooth, label=f"Config {config}", color=color, linewidth=1.2)
+                axis.fill_between(
+                    x_values,
+                    (smooth - std).clip(lower=0),
+                    (smooth + std).clip(upper=1),
+                    color=color,
+                    alpha=0.12,
+                )
+
+        fixed_threshold = float(self.thesis_base.get("FIXED_THRESHOLD_VALUE", 0.3888))
+        axis.axhline(fixed_threshold, color="gray", linewidth=0.8, alpha=0.6, label="Fixed Threshold")
+        axis.set_title("Threshold Over Update")
+        axis.set_xlabel("Normalized Update Sequence")
+        axis.set_ylabel("Threshold Value")
+        axis.set_ylim(0.34, 0.84)
+        axis.set_xticks([0, 1])
+        axis.set_xticklabels(["First", "Last"])
+        axis.legend(loc="upper right")
+        self.apply_thesis_axes_style(axis)
+        self.add_figure_caption(figure, "Figure 5-3", "Threshold Value Updates")
+
+        path = self.plots_dir / "figure_5_3_threshold_value_updates.png"
+        figure.savefig(path, dpi=160)
+        plt.close(figure)
+        return path
+
+    def write_per_sample_latency_plot(
+        self, plt, per_sample_latency: pd.DataFrame
+    ) -> Path:
+        import numpy as np
+
+        configs = per_sample_latency["config"].tolist()
+        x_values = np.arange(len(configs))
+        width = 0.22
+        series = [
+            ("System Combined", "system_combined_s", "#1f77b4", -width),
+            ("Offloaded Samples", "offloaded_samples_s", "#ff7f0e", 0),
+            ("Not Offloaded Samples", "not_offloaded_samples_s", "#2ca02c", width),
+        ]
+        figure, axis = plt.subplots(figsize=(11, 7))
+        for label, column, color, offset in series:
+            values = pd.to_numeric(per_sample_latency[column], errors="coerce")
+            bars = axis.bar(x_values + offset, values, width, label=label, color=color)
+            self.annotate_bars(axis, bars, fmt="{:.2f}", rotation=0)
+
+        axis.set_title("Per-Sample Latency Comparison")
+        axis.set_xlabel("Configuration")
+        axis.set_ylabel("Latency (s)")
+        axis.set_xticks(x_values)
+        axis.set_xticklabels(configs)
+        axis.legend(loc="upper left")
+        self.apply_thesis_axes_style(axis)
+        self.add_figure_caption(figure, "Figure 5-4", "Per-Sample Latency Comparison")
+
+        path = self.plots_dir / "figure_5_4_per_sample_latency_comparison.png"
+        figure.savefig(path, dpi=160)
+        plt.close(figure)
+        return path
 
     def write_latency_breakdown_plot(self, plt, latency: pd.DataFrame) -> Path:
         step_columns = [
@@ -489,135 +1018,159 @@ class ThesisReproductionRunner:
             "Step 5: ES to ED Communication",
             "Step 6: ED Result Saving",
         ]
+        colors = [
+            "#1f77b4",
+            "#ff7f0e",
+            "#2ca02c",
+            "#d62728",
+            "#9467bd",
+            "#8c564b",
+        ]
 
-        figure, axis = plt.subplots(figsize=(11, 6))
+        figure, axis = plt.subplots(figsize=(11, 7))
         bottoms = pd.Series([0.0] * len(latency))
         x_values = latency["config"].tolist()
-        for column, label in zip(step_columns, labels):
+        for column, label, color in zip(step_columns, labels, colors):
             values = pd.to_numeric(latency[column], errors="coerce").fillna(0.0)
-            axis.bar(x_values, values, bottom=bottoms, label=label)
+            bars = axis.bar(x_values, values, bottom=bottoms, label=label, color=color)
+            for bar_index, bar in enumerate(bars):
+                height = bar.get_height()
+                if height < 0.05:
+                    continue
+                axis.text(
+                    bar.get_x() + bar.get_width() / 2,
+                    bottoms.iloc[bar_index] + height / 2,
+                    f"{height:.2f}",
+                    ha="center",
+                    va="center",
+                    fontsize=8,
+                    color="white",
+                    fontweight="bold",
+                )
             bottoms += values
 
         for index, total in enumerate(bottoms):
-            axis.text(index, total, f"{total:.2f}", ha="center", va="bottom", fontsize=9)
+            axis.text(
+                index,
+                total,
+                f"{total:.2f}",
+                ha="center",
+                va="bottom",
+                fontsize=9,
+                fontweight="bold",
+            )
 
         axis.set_title("Latency Breakdown (Absolute)")
         axis.set_xlabel("Configuration")
         axis.set_ylabel("Time (s)")
-        axis.grid(axis="y", alpha=0.3)
-        axis.legend()
-        figure.tight_layout()
+        axis.legend(loc="upper left")
+        self.apply_thesis_axes_style(axis)
+        self.add_figure_caption(figure, "Figure 5-5", "Latency Breakdown")
 
-        path = self.plots_dir / "latency_breakdown_absolute.png"
+        path = self.plots_dir / "figure_5_5_latency_breakdown.png"
         figure.savefig(path, dpi=160)
         plt.close(figure)
         return path
 
-    def write_latency_breakdown_relative_plot(self, plt, latency: pd.DataFrame) -> Path:
-        step_columns = [
-            "step_1_ed_processing_s",
-            "step_2_ed_offload_buffer_s",
-            "step_3_ed_to_es_communication_s",
-            "step_4_es_processing_s",
-            "step_5_es_to_ed_communication_s",
-            "step_6_ed_result_saving_s",
-        ]
-        labels = [
-            "Step 1: ED Processing",
-            "Step 2: ED Offload Buffer",
-            "Step 3: ED to ES Communication",
-            "Step 4: ES Processing",
-            "Step 5: ES to ED Communication",
-            "Step 6: ED Result Saving",
-        ]
-
-        values = latency[step_columns].apply(pd.to_numeric, errors="coerce").fillna(0.0)
-        totals = values.sum(axis=1).replace(0, pd.NA)
-        percentages = values.div(totals, axis=0).fillna(0.0) * 100.0
-
-        figure, axis = plt.subplots(figsize=(11, 6))
-        bottoms = pd.Series([0.0] * len(latency))
-        x_values = latency["config"].tolist()
-        for column, label in zip(step_columns, labels):
-            column_values = percentages[column]
-            axis.bar(x_values, column_values, bottom=bottoms, label=label)
-            bottoms += column_values
-
-        axis.set_title("Latency Breakdown (Relative)")
-        axis.set_xlabel("Configuration")
-        axis.set_ylabel("Share of latency (%)")
-        axis.set_ylim(0, 100)
-        axis.grid(axis="y", alpha=0.3)
-        axis.legend()
-        figure.tight_layout()
-
-        path = self.plots_dir / "latency_breakdown_relative.png"
-        figure.savefig(path, dpi=160)
-        plt.close(figure)
-        return path
-
-    def write_communication_efficiency_plot(
-        self, plt, communication: pd.DataFrame
+    def write_throughput_processing_time_plot(
+        self, plt, summary: pd.DataFrame, per_sample_latency: pd.DataFrame
     ) -> Path:
-        figure, axis = plt.subplots(figsize=(9, 5))
-        axis.bar(
-            communication["config"],
-            communication["offload_transmissions"],
-            color="#4C78A8",
+        import numpy as np
+
+        merged = summary.merge(
+            per_sample_latency,
+            left_on="thesis_config",
+            right_on="config",
+            how="left",
         )
-        axis.set_title("Offload Transmissions by Configuration")
-        axis.set_xlabel("Configuration")
-        axis.set_ylabel("Offload transmissions")
-        axis.grid(axis="y", alpha=0.3)
-        figure.tight_layout()
+        configs = merged["thesis_config"].tolist()
+        x_values = np.arange(len(configs))
+        throughput = pd.to_numeric(
+            merged["throughput_samples_s"], errors="coerce"
+        ).fillna(0.0)
+        seconds_per_sample = throughput.map(lambda value: 1.0 / value if value else 0.0)
+        per_sample = pd.to_numeric(
+            merged["system_combined_s"], errors="coerce"
+        ).fillna(0.0)
 
-        path = self.plots_dir / "communication_efficiency.png"
-        figure.savefig(path, dpi=160)
-        plt.close(figure)
-        return path
+        figure, axis_left = plt.subplots(figsize=(11, 7))
+        bars = axis_left.bar(
+            x_values,
+            throughput,
+            width=0.6,
+            color="#1f77b4",
+            alpha=0.7,
+            label="Samples per Second",
+        )
+        axis_left.set_xlabel("Configuration")
+        axis_left.set_ylabel("Throughput (samples/s)", color="#1f77b4")
+        axis_left.tick_params(axis="y", labelcolor="#1f77b4")
+        axis_left.set_xticks(x_values)
+        axis_left.set_xticklabels(configs)
+        axis_left.grid(axis="y", linestyle="--", alpha=0.35)
+        axis_left.set_axisbelow(True)
 
-    def write_throughput_plot(self, plt) -> Path:
-        summary = pd.read_csv(self.summary_csv)
-        figure, axis = plt.subplots(figsize=(9, 5))
-        axis.bar(summary["thesis_config"], summary["throughput_samples_s"], color="#59A14F")
-        axis.set_title("Throughput by Configuration")
-        axis.set_xlabel("Configuration")
-        axis.set_ylabel("Samples/s")
-        axis.grid(axis="y", alpha=0.3)
-        figure.tight_layout()
+        axis_right = axis_left.twinx()
+        line_seconds, = axis_right.plot(
+            x_values,
+            seconds_per_sample,
+            color="#006b4f",
+            marker="o",
+            label="Seconds per Sample",
+        )
+        line_latency, = axis_right.plot(
+            x_values,
+            per_sample,
+            color="#d95f02",
+            marker="o",
+            label="Per-Sample Latency",
+        )
+        axis_right.set_ylabel("Time (s)", color="#d95f02")
+        axis_right.tick_params(axis="y", labelcolor="#d95f02")
 
-        path = self.plots_dir / "throughput.png"
-        figure.savefig(path, dpi=160)
-        plt.close(figure)
-        return path
-
-    def write_threshold_trajectory_plot(
-        self, plt, threshold_trajectory: pd.DataFrame
-    ) -> Path:
-        figure, axis = plt.subplots(figsize=(10, 5))
-        if not threshold_trajectory.empty:
-            for config, group in threshold_trajectory.groupby("config"):
-                values = pd.to_numeric(
-                    group["decision_threshold"], errors="coerce"
-                ).dropna()
-                if values.empty:
-                    continue
-                axis.plot(
-                    group.loc[values.index, "sample_index"],
-                    values,
-                    label=f"Config {config}",
+        for bar in bars:
+            height = bar.get_height()
+            if height <= 0:
+                continue
+            axis_left.text(
+                bar.get_x() + bar.get_width() / 2,
+                height,
+                f"{height:.2f}",
+                ha="center",
+                va="bottom",
+                fontsize=8,
+                color="#1f77b4",
+            )
+        for x_value, value in zip(x_values, seconds_per_sample):
+            if value > 0:
+                axis_right.text(
+                    x_value,
+                    value,
+                    f"{value:.2f}",
+                    ha="center",
+                    va="bottom",
+                    fontsize=8,
+                    color="#006b4f",
+                )
+        for x_value, value in zip(x_values, per_sample):
+            if value > 0:
+                axis_right.text(
+                    x_value,
+                    value,
+                    f"{value:.2f}",
+                    ha="center",
+                    va="top",
+                    fontsize=8,
+                    color="#d95f02",
                 )
 
-        axis.set_title("Adaptive Threshold Trajectory")
-        axis.set_xlabel("Sample index")
-        axis.set_ylabel("Threshold")
-        axis.set_ylim(0, 1)
-        axis.grid(True, alpha=0.3)
-        if axis.lines:
-            axis.legend()
-        figure.tight_layout()
+        axis_left.set_title("System Throughput and Processing Times")
+        handles = [bars, line_seconds, line_latency]
+        labels = [handle.get_label() for handle in handles]
+        axis_left.legend(handles, labels, loc="upper center")
+        self.add_figure_caption(figure, "Figure 5-6", "Throughput and Processing Time")
 
-        path = self.plots_dir / "threshold_trajectory.png"
+        path = self.plots_dir / "figure_5_6_throughput_processing_time.png"
         figure.savefig(path, dpi=160)
         plt.close(figure)
         return path
@@ -761,6 +1314,13 @@ class ThesisReproductionRunner:
         if values.empty:
             return None
         return float(values.median())
+
+    @staticmethod
+    def series_mean(values: pd.Series) -> float | None:
+        numeric = pd.to_numeric(values, errors="coerce").dropna()
+        if numeric.empty:
+            return None
+        return float(numeric.mean())
 
     @staticmethod
     def count_true(data: pd.DataFrame, column: str) -> int | None:
