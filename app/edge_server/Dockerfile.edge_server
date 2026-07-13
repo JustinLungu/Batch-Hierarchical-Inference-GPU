@@ -1,5 +1,4 @@
-# syntax=docker/dockerfile:1.7
-FROM python:3.10-slim
+FROM python:3.9-slim
 
 WORKDIR /app
 
@@ -11,16 +10,15 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/* && \
     mkdir -p /var/run/sshd results
 
-# Install Python dependencies before copying app/model files so code and data
-# changes do not force a dependency reinstall.
-COPY requirements-docker-cpu.txt ./requirements.txt
-RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install -r requirements.txt
 
 # Copy application code and supporting files
 COPY app/edge_server/edge_server.py ./edge_server/
+COPY requirements.txt ./
 COPY data/models/lml/ ./data/models/lml/
 COPY app/edge_server/entrypoint_edge_server.sh ./
+
+# Install Python dependencies
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Make entrypoint script executable
 RUN chmod +x entrypoint_edge_server.sh
