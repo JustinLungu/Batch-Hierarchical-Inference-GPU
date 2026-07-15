@@ -195,13 +195,13 @@ class ThesisReproductionRunner:
         self.reconstruct_thresholds = reconstruct_thresholds
         self.config = load_env_file(DEFAULT_CONFIG_FILE)
         self.config.update(load_env_file(CONFIG_FILE))
+        self.device = require_config(self.config, "DEVICE")
         self.thesis_base = load_env_file(THESIS_REPRODUCTION_FILE)
         self.configurations = self.load_thesis_configurations()
-        self.device = require_config(self.config, "DEVICE")
         self.results_dir = Path(require_config(self.config, "RESULTS_DIR"))
         self.sample_limit = self.config_value("CONTROLLER_MAX_SAMPLES", "all")
         self.started_at = datetime.now(timezone.utc)
-        self.output_dir = self.results_dir / "thesis_reproduction"
+        self.output_dir = self.results_dir / self.output_dir_name()
         self.summary_csv = self.output_dir / "summary.csv"
         self.latency_breakdown_csv = self.output_dir / "latency_breakdown.csv"
         self.communication_efficiency_csv = (
@@ -230,7 +230,7 @@ class ThesisReproductionRunner:
 
         print(
             "Running thesis reproduction configurations "
-            f"001-007 on DEVICE={self.device}."
+            f"{self.config_id_label()} on DEVICE={self.device}."
         )
         print(f"Sample limit: {self.sample_limit}")
         print()
@@ -503,7 +503,41 @@ class ThesisReproductionRunner:
             raise RuntimeError(
                 f"{THESIS_CONFIG_FILE} must define configs 001 through 007 in order."
             )
-        return configs
+        selected_config_ids = self.selected_config_ids()
+        if selected_config_ids is None:
+            return configs
+
+        selected_configs = [
+            config for config in configs if config.config_id in selected_config_ids
+        ]
+        missing = selected_config_ids - {config.config_id for config in selected_configs}
+        if missing:
+            raise ValueError(
+                "THESIS_CONFIGS_TO_RUN contains unknown config id(s): "
+                f"{', '.join(sorted(missing))}"
+            )
+        return selected_configs
+
+    def selected_config_ids(self) -> set[str] | None:
+        raw_value = self.config_value("THESIS_CONFIGS_TO_RUN", "all").strip()
+        if raw_value.lower() in {"all", "001-007", "1-7"}:
+            return None
+        return {
+            item.strip().zfill(3)
+            for item in raw_value.replace(";", ",").split(",")
+            if item.strip()
+        }
+
+    def config_id_label(self) -> str:
+        return ",".join(config.config_id for config in self.configurations)
+
+    def output_dir_name(self) -> str:
+        configured = self.config.get("THESIS_OUTPUT_DIR", "").strip()
+        if configured:
+            return configured
+        if self.device == "cuda":
+            return "thesis_reproduction_gpu"
+        return "thesis_reproduction"
 
     def validate_assets(self) -> None:
         required_keys = ["SAMPLE_PATH", "SML_MODEL", "LML_MODEL"]
@@ -1184,6 +1218,7 @@ class ThesisReproductionRunner:
         lines = [
             f"Run: thesis_reproduction_{self.device}",
             f"Configurations: {len(summary)}",
+            f"Configuration IDs: {self.config_id_label()}",
             f"Sample limit: {self.sample_limit}",
             f"Dataset: {self.thesis_base['SAMPLE_PATH']}",
             f"SML: {self.thesis_base['SML_ARCH']}",
@@ -1256,6 +1291,7 @@ class ThesisReproductionRunner:
             "thesis_config_file": str(THESIS_CONFIG_FILE),
             "thesis_base": self.thesis_base,
             "sample_limit": self.sample_limit,
+            "config_ids": [config.config_id for config in self.configurations],
             "configs": [
                 {
                     "config_id": config.config_id,
