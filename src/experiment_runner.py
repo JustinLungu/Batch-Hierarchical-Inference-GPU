@@ -140,7 +140,7 @@ class ExperimentRunner:
         device_response.raise_for_status()
 
     def experiment_config(self) -> dict:
-        return {
+        experiment_config = {
             "sample_path": require_config(self.config, "SAMPLE_PATH"),
             "sml_model": require_config(self.config, "SML_MODEL"),
             "sml_architecture": require_config(self.config, "SML_ARCH"),
@@ -153,6 +153,17 @@ class ExperimentRunner:
             "batch_wait_time": float(require_config(self.config, "BATCH_WAIT_TIME")),
             "controller_batch_size": self.controller_batch_size,
         }
+        for key in (
+            "LML_BATCHING_MODE",
+            "LML_INITIAL_BATCH_SIZE",
+            "LML_MIN_BATCH_SIZE",
+            "LML_MAX_BATCH_SIZE",
+            "LML_GPU_MEMORY_FRACTION",
+            "LML_OOM_RETRY",
+        ):
+            if key in self.config:
+                experiment_config[key.lower()] = self.config[key]
+        return experiment_config
 
     def send_samples(self) -> None:
         experiment_config = self.experiment_config()
@@ -373,6 +384,12 @@ class ExperimentRunner:
                 "controller_max_samples": self.controller_max_samples_label,
                 "flush_final_batch": self.flush_final_batch,
                 "batch_wait_time": float(require_config(self.config, "BATCH_WAIT_TIME")),
+                "lml_batching_mode": self.config.get("LML_BATCHING_MODE"),
+                "lml_initial_batch_size": self.config.get("LML_INITIAL_BATCH_SIZE"),
+                "lml_min_batch_size": self.config.get("LML_MIN_BATCH_SIZE"),
+                "lml_max_batch_size": self.config.get("LML_MAX_BATCH_SIZE"),
+                "lml_gpu_memory_fraction": self.config.get("LML_GPU_MEMORY_FRACTION"),
+                "lml_oom_retry": self.config.get("LML_OOM_RETRY"),
             },
             "outputs": {
                 "source_raw_results_csv": str(self.raw_results_csv),

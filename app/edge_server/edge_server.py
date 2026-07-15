@@ -143,6 +143,223 @@ def device_diagnostics():
         )
     return diagnostics
 
+
+def config_value(key):
+    env_key = key.upper()
+    if key in config:
+        return config[key]
+    if env_key in os.environ:
+        return os.environ[env_key]
+    raise ValueError(
+        f"Missing required LML batching setting '{env_key}'. "
+        "Set it in config/experiment.env before sending configuration."
+    )
+
+
+def config_bool(key):
+    value = str(config_value(key)).strip().lower()
+    return value in {"1", "true", "yes", "on"}
+
+
+def config_int(key, minimum=None):
+    value = int(config_value(key))
+    if minimum is not None:
+        value = max(minimum, value)
+    return value
+
+
+def config_float(key, minimum=None, maximum=None):
+    value = float(config_value(key))
+    if minimum is not None:
+        value = max(minimum, value)
+    if maximum is not None:
+        value = min(maximum, value)
+    return value
+
+
+def lml_batching_settings():
+    mode = str(config_value("lml_batching_mode")).strip().lower()
+    if mode == "auto":
+        mode = "adaptive" if device.type == "cuda" else "sequential"
+    if mode in {"off", "false", "disabled", "none"}:
+        mode = "sequential"
+    if mode not in {"sequential", "fixed", "adaptive"}:
+        raise ValueError("lml_batching_mode must be one of: auto, sequential, fixed, adaptive")
+
+    min_batch_size = config_int("lml_min_batch_size", minimum=1)
+    initial_batch_size = config_int("lml_initial_batch_size", minimum=min_batch_size)
+    max_batch_size = config_int("lml_max_batch_size", minimum=min_batch_size)
+    initial_batch_size = min(initial_batch_size, max_batch_size)
+
+    return {
+        "mode": mode,
+        "initial_batch_size": initial_batch_size,
+        "min_batch_size": min_batch_size,
+        "max_batch_size": max_batch_size,
+        "gpu_memory_fraction": config_float(
+            "lml_gpu_memory_fraction", minimum=0.1, maximum=1.0
+        ),
+        "oom_retry": config_bool("lml_oom_retry"),
+    }
+
+
+def cuda_memory_snapshot():
+    if device.type != "cuda" or not torch.cuda.is_available():
+        return {}
+    free_bytes, total_bytes = torch.cuda.mem_get_info()
+    used_bytes = total_bytes - free_bytes
+    return {
+        "cuda_memory_free_bytes": free_bytes,
+        "cuda_memory_total_bytes": total_bytes,
+        "cuda_memory_used_bytes": used_bytes,
+        "cuda_memory_used_fraction": used_bytes / total_bytes if total_bytes else None,
+    }
+
+
+def is_cuda_oom(error):
+    return isinstance(error, torch.cuda.OutOfMemoryError) or (
+        isinstance(error, RuntimeError)
+        and "out of memory" in str(error).lower()
+        and device.type == "cuda"
+    )
+
+
+def next_successful_batch_size(current_batch_size, settings, processed_batch_size):
+    if settings["mode"] != "adaptive":
+        return current_batch_size
+    if device.type != "cuda":
+        return current_batch_size
+    if processed_batch_size < current_batch_size:
+        return current_batch_size
+    return min(settings["max_batch_size"], max(current_batch_size + 1, current_batch_size * 2))
+
+
+def smaller_batch_size(current_batch_size, settings):
+    return max(settings["min_batch_size"], current_batch_size // 2)
+
+
+def fit_batch_size_to_memory(current_batch_size, settings):
+    if settings["mode"] != "adaptive" or device.type != "cuda":
+        return current_batch_size
+
+    memory = cuda_memory_snapshot()
+    used_fraction = memory.get("cuda_memory_used_fraction")
+    if used_fraction is None:
+        return current_batch_size
+
+    while (
+        current_batch_size > settings["min_batch_size"]
+        and used_fraction > settings["gpu_memory_fraction"]
+    ):
+        current_batch_size = smaller_batch_size(current_batch_size, settings)
+
+    return current_batch_size
+
+
+async def preprocess_upload_file(file):
+    def load_and_transform():
+        file.file.seek(0)
+        image = Image.open(file.file).convert("RGB")
+        return predefined_transform(image)
+
+    return await asyncio.to_thread(load_and_transform)
+
+
+async def run_lml_micro_batch(batch_files, uuid_map, settings, requested_batch_size):
+    ts_lml_inference_start = time.time()
+    tensors = [await preprocess_upload_file(file) for file in batch_files]
+    image_tensor = torch.stack(tensors, dim=0).to(device)
+
+    memory_before = cuda_memory_snapshot()
+    with torch.no_grad():
+        output = lml_model(image_tensor)
+        probabilities = torch.softmax(output, dim=1)
+        confidence, prediction = torch.max(probabilities, 1)
+    if device.type == "cuda":
+        torch.cuda.synchronize()
+    memory_after = cuda_memory_snapshot()
+    ts_lml_inference_end = time.time()
+
+    batch_results = []
+    for index, file in enumerate(batch_files):
+        confidence_score = confidence[index].item()
+        predicted_label = prediction[index].item()
+        sample_uuid = uuid_map.get(file.filename)
+
+        await async_log_info(
+            "Sample: "
+            f"{file.filename}, Prediction: {predicted_label}, "
+            f"Confidence: {confidence_score:.2f}, "
+            f"Batch: {len(batch_files)}, "
+            f"Time: {ts_lml_inference_end - ts_lml_inference_start:.3f}s"
+        )
+
+        result = {
+            "UUID": sample_uuid,
+            "Filename": file.filename,
+            "LML Prediction": predicted_label,
+            "LML Confidence": confidence_score,
+            "ts_sample_received_at_edge_server": None,
+            "ts_lml_inference_start": ts_lml_inference_start,
+            "ts_lml_inference_end": ts_lml_inference_end,
+            "LML Batching Mode": settings["mode"],
+            "LML Requested Batch Size": requested_batch_size,
+            "LML Actual Batch Size": len(batch_files),
+            "LML Batch Device": str(device),
+            "LML CUDA Memory Used Fraction Before": memory_before.get(
+                "cuda_memory_used_fraction"
+            ),
+            "LML CUDA Memory Used Fraction After": memory_after.get(
+                "cuda_memory_used_fraction"
+            ),
+        }
+        batch_results.append(result)
+
+    return batch_results
+
+
+async def run_lml_batches(files, uuid_map):
+    settings = lml_batching_settings()
+    if settings["mode"] == "sequential":
+        current_batch_size = 1
+    else:
+        current_batch_size = settings["initial_batch_size"]
+
+    results = []
+    index = 0
+    while index < len(files):
+        current_batch_size = fit_batch_size_to_memory(current_batch_size, settings)
+        requested_batch_size = current_batch_size
+        batch_size = min(current_batch_size, len(files) - index)
+        batch_files = files[index : index + batch_size]
+
+        try:
+            batch_results = await run_lml_micro_batch(
+                batch_files, uuid_map, settings, requested_batch_size
+            )
+        except Exception as exc:
+            if (
+                settings["oom_retry"]
+                and is_cuda_oom(exc)
+                and current_batch_size > settings["min_batch_size"]
+            ):
+                logger.warning(
+                    "CUDA OOM with LML batch size %s. Retrying with smaller batch.",
+                    current_batch_size,
+                )
+                torch.cuda.empty_cache()
+                current_batch_size = smaller_batch_size(current_batch_size, settings)
+                continue
+            raise
+
+        results.extend(batch_results)
+        index += batch_size
+        current_batch_size = next_successful_batch_size(
+            current_batch_size, settings, batch_size
+        )
+
+    return results
+
 # Initialize: Global variables
 config = {}
 lml_model = None
@@ -187,8 +404,12 @@ async def update_config(new_config: dict):
 
     cached_config["lml_model"] = lml_model
     cached_config["lml_architecture"] = lml_architecture
+    cached_config["lml_batching"] = lml_batching_settings()
 
-    await async_log_info(f"Edge Server: Configuration received and updated successfully.")
+    await async_log_info(
+        "Edge Server: Configuration received and updated successfully. "
+        f"LML batching: {json.dumps(cached_config['lml_batching'])}"
+    )
     return {"message": "Edge Server: Configuration updated successfully"}
 
 # Endpoint: Receive and process samples
@@ -210,43 +431,9 @@ async def predict(files: List[UploadFile] = File(...), metadata: str = Form(None
         logger.error(f"Failed to parse metadata JSON: {e}")
         return {"error": "Invalid metadata format"}
 
-    results = []
-
-    for file in files:
-
-        # ts_lml_inference_start: LML inference start time
-        ts_lml_inference_start = time.time()
-
-        # Preprocess image
-        image = await asyncio.to_thread(lambda: Image.open(file.file).convert("RGB"))
-        image_tensor = predefined_transform(image).unsqueeze(0).to(device)
-
-        # LML inference
-        with torch.no_grad():
-            output = lml_model(image_tensor)
-            confidence, prediction = torch.max(torch.softmax(output, dim=1), 1)
-
-        # ts_lml_inference_end: LML inference end time
-        ts_lml_inference_end = time.time()
-
-        confidence_score = confidence.item()
-        predicted_label = prediction.item()
-        sample_uuid = uuid_map.get(file.filename)
-
-        # Log results for LML inference
-        await async_log_info(f"Sample: {file.filename}, Prediction: {predicted_label}, Confidence: {confidence_score:.2f}, Time: {ts_lml_inference_end - ts_lml_inference_start:.3f}s")
-
-        result = {
-            "UUID": sample_uuid,
-            "Filename": file.filename,
-            "LML Prediction": predicted_label,
-            "LML Confidence": confidence_score,
-            "ts_sample_received_at_edge_server": ts_sample_received_at_edge_server,
-            "ts_lml_inference_start": ts_lml_inference_start,
-            "ts_lml_inference_end": ts_lml_inference_end
-        }
-
-        results.append(result)
+    results = await run_lml_batches(files, uuid_map)
+    for result in results:
+        result["ts_sample_received_at_edge_server"] = ts_sample_received_at_edge_server
 
     # ts_results_sent_to_edge_device: Results sent to Edge Device time
     ts_results_sent_to_edge_device = time.time()
