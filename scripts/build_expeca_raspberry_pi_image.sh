@@ -20,25 +20,19 @@ echo "  platform:    ${EXPECA_ARM64_IMAGE_PLATFORM}"
 echo "  edge device: ${EDGE_DEVICE_ARM64_IMAGE}"
 echo
 
-if docker buildx version >/dev/null 2>&1; then
-  docker buildx build \
-    --platform "$EXPECA_ARM64_IMAGE_PLATFORM" \
-    --load \
-    -f app/edge_device/Dockerfile.edge_device \
-    -t "$EDGE_DEVICE_ARM64_IMAGE" \
-    .
-else
-  echo
-  echo "docker buildx is unavailable; using plain docker build."
-  echo "This requires Docker/binfmt support for ${EXPECA_ARM64_IMAGE_PLATFORM} on this host."
-  echo
-
-  docker build \
-    --platform "$EXPECA_ARM64_IMAGE_PLATFORM" \
-    -f app/edge_device/Dockerfile.edge_device \
-    -t "$EDGE_DEVICE_ARM64_IMAGE" \
-    .
+if ! docker buildx version >/dev/null 2>&1; then
+  echo "docker buildx is required for the Raspberry Pi ARM64 image."
+  echo "Plain docker build cannot reliably cross-build ${EXPECA_ARM64_IMAGE_PLATFORM} from an amd64 laptop."
+  echo "Install the Docker buildx plugin, then rerun this script."
+  exit 1
 fi
+
+docker buildx build \
+  --platform "$EXPECA_ARM64_IMAGE_PLATFORM" \
+  --load \
+  -f app/edge_device/Dockerfile.edge_device \
+  -t "$EDGE_DEVICE_ARM64_IMAGE" \
+  .
 
 echo
 echo "Built Raspberry Pi edge-device image:"
