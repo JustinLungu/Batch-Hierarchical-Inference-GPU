@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.10,<3.13"
 dependencies = [
     "fastapi",
+    "ipykernel",
     "jedi",
     "loguru",
     "matplotlib",

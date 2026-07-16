@@ -63,12 +63,21 @@ scripts/push_expeca_cpu_images.sh
 
 ## GPU Edge-Server Image
 
-For GPU reproduction, keep the edge-device CPU image and build only the CUDA
-edge-server image:
+For GPU reproduction, build the CUDA edge-server image:
 
 ```bash
 scripts/build_expeca_gpu_server_image.sh
 scripts/push_expeca_gpu_server_image.sh
+```
+
+## Raspberry Pi Edge-Device Image
+
+For the Raspberry Pi edge device on ExPECA, build and push the ARM64
+edge-device image:
+
+```bash
+scripts/build_expeca_raspberry_pi_image.sh
+scripts/push_expeca_raspberry_pi_image.sh
 ```
 
 ## Main Runbook
