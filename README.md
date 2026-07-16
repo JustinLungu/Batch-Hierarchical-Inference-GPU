@@ -1,342 +1,209 @@
-# Batch Hierarchical Inference Framework (Batch HI-Framework)
+# Batch Hierarchical Inference GPU Experiments
 
-This repository contains the code and documentation for a two-layer Hierarchical Inference (HI) framework. The framework facilitates the development, testing, and deployment of inference tasks split between a resource-constrained edge device and a more powerful edge server.
+This repository contains the Batch Hierarchical Inference framework adapted for
+reproducing the thesis experiments on ExPECA and benchmarking GPU offloading.
 
-The framework is designed around the ExPECA testbed environment at KTH Royal Institute of Technology, but it can be adapted for other environments and hardware setups.
-It is built as part of an MSc thesis project at KTH.
+The current workflow is centered on:
 
-## Overview
+- a Raspberry Pi / ARM64 edge-device container running the SML,
+- an ExPECA CPU or GPU edge-server container running the LML,
+- a local Python controller in `src/run_thesis_reproduction.py`,
+- reproducible configuration in `config/`,
+- Docker image build/push helpers in `scripts/`,
+- thesis-style CSV summaries and plots in `results/`.
 
-The core idea is to run a lightweight Small Model (SML) on an **Edge Device** for initial, fast inference. Based on configurable criteria (e.g., confidence thresholds), the task can be offloaded to an **Edge Server** running a more complex, Large Model (LML) for higher accuracy. This balances latency, resource usage, and accuracy. An **External Controller** script manages the overall experiment flow, including configuration, data feeding, and results collection.
+## Main Goal
 
-## System Architecture
+The experiment reproduces the seven thesis configurations and extends them to
+GPU LML inference. For GPU benchmarking, config `001` is skipped because it
+never offloads to the server.
 
-The framework consists of the following main components:
+The important configuration IDs are:
 
-**Edge Device (`app/edge_device/`)**:
+| Config | Decision Method | Offloading Strategy | Controller Batch |
+|---|---|---|---:|
+| `001` | `never_offload` | `send_individually` | 1 |
+| `002` | `always_offload` | `send_individually` | 1 |
+| `003` | `fixed_threshold` | `send_individually` | 1 |
+| `004` | `adaptive_threshold` | `send_individually` | 1 |
+| `005` | `adaptive_threshold` | `dynamic_batching` | 5 |
+| `006` | `adaptive_threshold` | `dynamic_batching` | 15 |
+| `007` | `adaptive_threshold` | `dynamic_batching` | 45 |
 
-- Runs a lightweight model (SML).
-- Receives input data (e.g., images) via a FastAPI endpoint (`/predict`).
-- Performs initial inference with the SML.
-- Decides whether to offload based on the chosen `decision_method` (`offloading_decision_maker.py`).
-- If offloading, sends the data to the Edge Server using the selected `offloading_strategy` (`sample_offloading_method.py`).
-- Logs detailed performance metrics (timings, predictions, confidence).
-- Configurable via a FastAPI endpoint (`/config`) and environment variables.
+## Repository Layout
 
-**Edge Server (`app/edge_server/`)**:
+```text
+app/
+  edge_device/              FastAPI edge-device service, SML, offloading logic
+  edge_server/              FastAPI edge-server service, LML, CPU/GPU inference
+  controller_internal/      Original internal controller used inside containers
 
-- Runs a computationally intensive model (LML).
-- Receives potentially batched data from the Edge Device via a FastAPI endpoint (`/predict`).
-- Performs inference using the LML.
-- Returns the results (prediction, confidence) to the Edge Device.
-- Logs detailed performance metrics (timings, predictions, confidence).
-- Configurable via a FastAPI endpoint (`/config`) and environment variables.
+config/
+  defaults.env              Stable paths, ports, image tags, dataset/model paths
+  experiment.env            Active runtime settings, IPs, CPU/GPU selection
+  thesis_configs.csv        Thesis config matrix 001-007
+  thesis_reproduction.env   Fixed thesis dataset/model choices
 
-**Offloading Logic (`app/edge_device/`)**:
-
-- `offloading_decision_maker.py` - Implements strategies to decide *if* a sample should be offloaded (e.g., based on SML confidence).
-- `sample_offloading_method.py` - Implements strategies for *how* samples are sent to the server (e.g., individually or batched).
-
-**External Controller (`app/controller_external/`)**:
-
-- Orchestrates the experiments.
-- Sends configuration details (model paths, strategies, etc.) to the Edge Device and Edge Server.
-- Feeds input samples to the Edge Device.
-- Collects and aggregates results from the logs.
-
-**Internal Controller (`app/controller_internal/`)**:
-
-- Similar to the external controller, but is built into the Edge Device container.
-- Useful for setups where there is no direct access to the Edge Device.
-
-## Features
-
-**Offloading Decision Logics:**
-
-- `never_offload` - Only local inference on the Edge Device (S-ML).
-- `always_offload` - Both inference on the Edge Device (S-ML) and the Edge Server (L-ML).
-- `fixed_threshold` - Selective offloading based on fixed confidence threshold.
-- `adaptive_threshold` - Selective offloading based on adaptive confidence threshold.
-  - NOTE: `offloading_decision_maker.py` for details on the adaptive threshold.
-
-**Sample Batching Logics:**
-
-- `send_individually` - Samples are sent immediately and individually.
-- `size_based_batching` - Batch is sent when a set number of samples is collected.
-- `buffer_based_batching` - Batch is sent when a set time has passed since the first sample was collected.
-- `combined_batching` - Batch is sent when either a set number of samples or a set time has passed.
-
-**Logging:**
-
-| Field | Description |
-|-------|-------------|
-| `UUID` | Unique identifier for each inference task |
-| `Filename` | Input file that was processed |
-| `True Class` | Actual classification label |
-| `SML Prediction` | Small Model prediction result |
-| `SML Confidence` | Small Model confidence score |
-| `Offloaded` | Whether the task was offloaded to the server |
-| `Buffered` | Whether the task was held in a batch buffer |
-| `LML Prediction` | Large Model prediction result |
-| `LML Confidence` | Large Model confidence score |
-| `ts_sml_inference_start` | Timestamp when SML inference started |
-| `ts_sml_inference_end` | Timestamp when SML inference completed |
-| `ts_offload_decision_made` | Timestamp when offloading decision was made |
-| `ts_results_saved_not_offloaded` | Timestamp when results were saved (non-offloaded cases) |
-| `ts_sample_sent_to_offloading` | Timestamp when sample was sent to offloading module |
-| `ts_sample_sent_to_edge_server` | Timestamp when sample was sent to edge server |
-| `ts_sample_received_at_edge_server` | Timestamp when sample arrived at edge server |
-| `ts_lml_inference_start` | Timestamp when LML inference started |
-| `ts_lml_inference_end` | Timestamp when LML inference completed |
-| `ts_results_sent_to_edge_device` | Timestamp when results were sent back to edge device |
-| `ts_results_received_from_edge_server` | Timestamp when results arrived from edge server |
-| `ts_results_received_from_offloading_module` | Timestamp when results were received from offloading module |
-| `ts_threshold_updated` | Processing time for updating the adaptive threshold |
-| `ts_total_time` | Total processing time for the inference task |
-
-**Model Architecture Support:**
-
-- Support for extending available sml and lml models in `edge_device.py` and `edge_server.py`.
-  - Models are located in `data/models/sml/` and `data/models/lml/`.
-- Support for extending available architectures in `edge_device.py` and `edge_server.py`.
-
-## Project Structure
-
-```plaintext
-Hierarchical-Inference-Framework/
-├── .gitignore
-├── README.md
-├── requirements.txt
-├── app/
-│   ├── edge_device/
-│   │   ├── edge_device.py                   # Main Edge Device logic (SML inference, API)
-│   │   ├── offloading_decision_maker.py     # Logic for making offloading decisions
-│   │   ├── sample_offloading_method.py      # Logic for batching and sending samples
-│   │   ├── entrypoint_edge_device.sh        # Docker entrypoint
-│   │   └── Dockerfile.edge_device           # Dockerfile for Edge Device
-│   ├── edge_server/
-│   │   ├── edge_server.py                   # Main Edge Server logic (LML inference, API)
-│   │   ├── entrypoint_edge_server.sh        # Docker entrypoint
-│   │   └── Dockerfile.edge_server           # Dockerfile for Edge Server
-│   ├── controller_internal/
-│   │   ├── controller_inside_container.py   # Controller for container execution inside Edge Device
-│   │   ├── model_registry.py                # SML and LML model registry for internal controller
-│   │   └── start.sh.               # Script to start the internal controller
-│   └── controller_external/
-│       ├── controller_local_scripts.py      # Controller for local script execution
-│       ├── controller_local_containers.py   # Controller for local container execution
-│       └── controller_testbed_containers.py # Controller for testbed container execution
-│
-├── config/
-│   └── .env                                 # Environment variables (ports, IPs)
-│
-├── data/
-│   ├── datasets/
-│   │   ├── imagenette/                      # Imagenette dataset
-│   │   └── imagenetV2/                      # ImageNetV2 dataset
-│   └── models/
-│       ├── lml/                             # LML models
-│       └── sml/                             # SML models
-│
-├── documentation/
-│   ├── ExPECA_HI_setup.ipynb                # Notebooks for ExPECA setup
-│   └── ExPECA_raspberry_setup.md            # ExPECA Raspberry Pi setup
-│
-├── results/                                 # Output directory for logs and results
-│   ├── Full system results and logs
-│   ├── Edge Device results and logs
-│   └── Edge Server results and logs
-│
-└── scripts_containers/                      # Helper scripts for Docker building and management
-    ├── build_edge_device_amd64.ps1
-    ├── build_edge_device_arm64.ps1
-    ├── build_edge_server_amd64.ps1
-    ├── start_local_containers_amd64.ps1
-    ├── start_local_containers_arm64.ps1
-    └── tag_and_push.ps1
+docker/local/               Local container test Dockerfiles
+docs/                       Thesis and ExPECA run documentation
+notebooks/                  ExPECA setup notebooks
+scripts/                    Setup, download, build, and push helpers
+src/                        Controller, analysis, and plotting code
 ```
 
-## Setup and Installation
+## Environment
 
-**1. Clone the Repository:**
+This project uses `uv` and `pyproject.toml` for the local Python environment.
 
 ```bash
-git clone <your-repository-url>
-cd Hierarchical-Inference-Framework
+scripts/setup_env.sh
+source .venv/bin/activate
 ```
 
-**2. Install Dependencies:**
-Install the required packages:
+Notebook dependencies are part of the same environment. If VS Code asks to
+install `ipykernel`, restart the kernel first; `ipykernel` is already managed by
+`uv`.
+
+## Data And Models
+
+Download the thesis dataset and model checkpoints:
 
 ```bash
-pip install -r requirements.txt
+scripts/download_dataset.sh --imagenetv2
+scripts/download_models.sh --all
+scripts/prepare_expeca_author_layout.sh
 ```
 
-**3. Configure Environment Variables:**
-Create the `config/.env` file and modify it:
+The thesis reproduction uses:
 
-```dotenv
-# config/.env
-EDGE_DEVICE_IP=edge_device
-EDGE_SERVER_IP=edge_server
-EDGE_DEVICE_PORT=8000
-EDGE_SERVER_PORT=8001
-DNS_IP=
-GATEWAY_IP=
-PASS=
+```text
+Dataset: data/datasets/imagenetV2/matched-frequency-format-val
+SML:     mobilenet_v3_large
+LML:     vit_h_14
 ```
 
-**4. Prepare Data and Models:**
+## Docker Images
 
-- Place your datasets in the `data/datasets/` directory.
-- Place your pre-trained SML models in `data/models/sml/`.
-- Place your pre-trained LML models in `data/models/lml/`.
-- Ensure the model architectures you use are supported in the `load_model` functions within `edge_device.py` and `edge_server.py`, or add support for new architectures.
+Set your Docker Hub namespace in `config/experiment.env`:
 
-## Configuration
+```env
+EXPECA_IMAGE_NAMESPACE=YOUR_DOCKERHUB_USERNAME_OR_REGISTRY_NAMESPACE
+```
 
-Configuration is managed through environment variables and parameters passed via the external controller scripts.
+Build and push CPU baseline images:
 
-- **Environment Variables**: Define network settings (IPs, ports) as described in the Setup section.
-- **Experiment Parameters**: The controller scripts (`app/controller_external/`) define the specific parameters for each experiment run:
+```bash
+scripts/build_expeca_cpu_images.sh
+scripts/push_expeca_cpu_images.sh
+```
 
-| Parameter                   | Description                                                                      | Example Value                           |
-| :-------------------------- | :------------------------------------------------------------------------------- | :-------------------------------------- |
-| `sample_path`               | Path to the input samples (e.g., images).                                        | `"data/datasets/imagenette/"`           |
-| `sml_model`                 | Path to the SML file for the Edge Device.                                        | `"data/models/sml/mobilenetv2_sml.pth"` |
-| `sml_architecture`          | Architecture name of the SML model (must match keys in `edge_device.py`).        | `"mobilenet_v2"`                        |
-| `lml_model`                 | Path to the LML file for the Edge Server.                                        | `"data/models/lml/resnet50_lml.pth"`    |
-| `lml_architecture`          | Architecture name of the LML model (must match keys in `edge_server.py`).        | `"resnet50"`                            |
-| `decision_method`           | Selected offloading decision logic.                                              | `"adaptive_threshold"`                  |
-| `fixed_threshold_value`     | Static confidence threshold (used if `decision_method` is `fixed_threshold`).    | `0.85`                                  |
-| `offloading_strategy`       | Selected sample batching logic.                                                  | `"size_based_batching"`                 |
-| `batch_size`                | Number of samples per batch (for size-based batching).                           | `10`                                    |
-| `batch_wait_time`           | Max time to wait before sending a batch (for time-based batching).               | `0.5` (seconds)                         |
-| `wait_time_between_samples` | Delay between sending samples from the controller to the Edge Device.            | `0.1` (seconds)                         |
+Build and push the GPU edge-server image:
 
-## Usage: Running Experiments
+```bash
+scripts/build_expeca_gpu_server_image.sh
+scripts/push_expeca_gpu_server_image.sh
+```
 
-Choose one of the following methods to run your experiments:
+Build and push the Raspberry Pi / ARM64 edge-device image:
 
-1. Locally with Python scripts
-2. Locally with Docker containers
-3. Remotely with Docker containers (e.g., ExPECA Testbed)
-4. Remotely with Internal Controller (e.g., ExPECA Testbed)
+```bash
+scripts/build_expeca_raspberry_pi_image.sh
+scripts/push_expeca_raspberry_pi_image.sh
+```
 
-### 1. Locally with Python Scripts
+The ARM64 build requires Docker Buildx and ARM64 emulation on an amd64 laptop.
 
-Simple setup, no Docker required. Good for development, initial testing and debugging.
+## ExPECA Notebooks
 
-**Steps:**
+Use:
 
-1. Open three separate terminals.
-2. In terminal 1, start the Edge Server:
+```text
+notebooks/ExPECA_HI_setup_GPU_RaspberryPi_Public_IP.ipynb
+```
 
-    ```bash
-    python app/edge_server/edge_server.py
-    ```
+for the GPU/Raspberry Pi benchmark.
 
-3. In terminal 2, start the Edge Device:
+The GPU notebook creates separate containers:
 
-    ```bash
-    python app/edge_device/edge_device.py
-    ```
+```text
+hi-gpu-edge-server
+hi-gpu-edge-device
+```
 
-4. Configure your experiment parameters within `app/controller_external/controller_local_scripts.py`.
-5. Run the controller script in terminal 3:
+so existing CPU containers named `hi-edge-server` and `hi-edge-device` can stay
+alive.
 
-    ```bash
-    python app/controller_external/controller_local_scripts.py
-    ```
+After the notebook creates both containers, copy the printed public IPs into
+`config/experiment.env`:
 
-6. Results and logs will be saved in the `results/` directory.
+```env
+DEVICE=cuda
+EXPECA_EDGE_SERVER_DEVICE=cuda
+EDGE_SERVER_IP=GPU_SERVER_PUBLIC_IP
+EDGE_DEVICE_IP=RASPBERRY_PI_PUBLIC_IP
+THESIS_CONFIGS_TO_RUN=002,003,004,005,006,007
+```
 
-### 2. Locally with Docker Containers
+## Run Thesis Reproduction
 
-For testing the framework in a containerized environment before deploying to remote hardware.
+Dry-run first:
 
-**Steps:**
+```bash
+.venv/bin/python src/run_thesis_reproduction.py --dry-run
+```
 
-1. Ensure Docker Desktop (or Docker Engine on Linux) is installed and running.
-2. Build containers using the provided PowerShell script:
-    - There are amd64 and arm64 versions of the containers available.
+Run the experiment:
 
-    ```powershell
-    # On Windows with PowerShell
-    .\scripts\build_edge_device_amd64.ps1
-    .\scripts\build_edge_device_arm64.ps1
-    .\scripts\build_edge_server_amd64.ps1
-    ```
+```bash
+.venv/bin/python src/run_thesis_reproduction.py
+```
 
-3. Start containers using the provided PowerShell script:
+Outputs are written to:
 
-    ```powershell
-    # On Windows with PowerShell
-    .\scripts\start_local_containers_amd64.ps1
-    .\scripts\start_local_containers_arm64.ps1
-    ```
+```text
+results/thesis_reproduction/       CPU run
+results/thesis_reproduction_gpu/   GPU run
+```
 
-4. Configure your experiment parameters within `app/controller_external/controller_local_containers.py`.
-5. Run the controller script:
+Each run contains:
 
-    ```bash
-    python app/controller_external/controller_local_containers.py
-    ```
+```text
+summary.csv
+summary.md
+latency_breakdown.csv
+communication_efficiency.csv
+offloading_distribution.csv
+per_sample_latency.csv
+threshold_trajectory.csv
+plots/
+config_00*/
+```
 
-6. Results and logs will be saved in the `results/` directory.
-7. Stop the containers when done.
+Regenerate plots from existing CSV outputs:
 
-### 3. Remotely with Docker Containers (e.g., ExPECA Testbed)
+```bash
+.venv/bin/python src/run_thesis_reproduction.py --plot-only
+```
 
-**Steps:**
+## GPU LML Batching
 
-1. Build the Docker images locally (as in step 2.2 above).
-2. Tag and push the images to a container registry (e.g., Docker Hub).
+The GPU edge-server supports memory-aware LML batching through
+`config/experiment.env`:
 
-    ```powershell
-    # On Windows with PowerShell (after updating script with your Docker Hub username)
-    .\scripts\tag_push.ps1
-    ```
+```env
+LML_BATCHING_MODE=auto
+LML_INITIAL_BATCH_SIZE=16
+LML_MIN_BATCH_SIZE=1
+LML_MAX_BATCH_SIZE=256
+LML_GPU_MEMORY_FRACTION=0.9
+LML_OOM_RETRY=true
+```
 
-3. Set up the remote environment. For ExPECA use `notebooks/ExPECA_HI_setup_Public_IP.ipynb` and follow the instructions in the notebook.
-4. Configure your experiment parameters within `app/controller_external/controller_local_containers.py`.
-5. Run the controller script:
+`auto` runs sequentially on CPU and adaptively on CUDA.
 
-    ```bash
-    python app/controller_external/controller_local_containers.py
-    ```
+## Useful Documentation
 
-6. Results and logs will be saved in the `results/` directory.
-7. Stop the containers when done.
-8. Remove the leases on the ExPECA testbed.
-
-### 4. Remotely with Internal Controller (e.g., ExPECA Testbed)
-
-1. Build the Docker images locally (as in step 2.2 above).
-2. Tag and push the images to a container registry (e.g., Docker Hub).
-3. Set up the remote environment. For ExPECA use `notebooks/ExPECA_HI_setup_EP5G.ipynb` and follow the instructions in the notebook.
-
-## Resources
-
-List of resources used in the project:
-
-## Resources
-
-List of main resources used in the project:
-
-- [PyTorch](https://pytorch.org/)
-- [TorchVision Models](https://pytorch.org/vision/stable/models.html)
-- [Imagenette](https://github.com/fastai/imagenette)
-- [FastAPI](https://fastapi.tiangolo.com/)
-- [Uvicorn](https://www.uvicorn.org/)
-- [Docker Documentation](https://docs.docker.com/)
-- [Docker Hub](https://hub.docker.com/)
-- [ExPECA Testbed](https://expeca.proj.kth.se/)
-
-## Future Work / Improvements
-
-- Implement more advanced dynamic batching strategies.
-- Implement more sophisticated adaptive offloading decision algorithms.
-- Expand support for more model architectures and ML frameworks.
-- Support different data types beyond images.
-- Enhance monitoring and visualization.
+- `docs/thesis_batch_hi_summary.md`: detailed thesis summary.
+- `docs/thesis_reproduction.md`: CPU/GPU reproduction runbook.
+- `scripts/README.md`: setup and Docker helper script overview.
+- `src/README.md`: runner and analysis output details.

@@ -13,7 +13,7 @@ RUN apt-get update && \
     mkdir -p /var/run/sshd results
 
 # Copy edge device application files
-COPY requirements.txt ./
+COPY requirements-docker-cpu.txt ./
 COPY app/edge_device/edge_device.py ./edge_device/
 COPY app/edge_server/edge_server.py ./edge_server/
 COPY app/edge_device/offloading_decision_maker.py ./edge_device/
@@ -31,7 +31,7 @@ COPY data/datasets/imagenetV2/ ./data/datasets/imagenetV2/
 COPY data/datasets/imagenette/val_renamed/ ./data/datasets/imagenette/val_renamed/
 
 # Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements-docker-cpu.txt
 
 # Make the entrypoint scripts executable
 RUN chmod +x entrypoint_edge_device.sh

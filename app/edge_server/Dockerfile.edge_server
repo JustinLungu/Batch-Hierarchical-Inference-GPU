@@ -13,12 +13,12 @@ RUN apt-get update && \
 
 # Copy application code and supporting files
 COPY app/edge_server/edge_server.py ./edge_server/
-COPY requirements.txt ./
+COPY requirements-docker-cpu.txt ./
 COPY data/models/lml/ ./data/models/lml/
 COPY app/edge_server/entrypoint_edge_server.sh ./
 
 # Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements-docker-cpu.txt
 
 # Make entrypoint script executable
 RUN chmod +x entrypoint_edge_server.sh
