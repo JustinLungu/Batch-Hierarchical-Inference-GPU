@@ -337,7 +337,6 @@ class ThesisReproductionRunner:
     def regenerate_plots_from_csv(self) -> int:
         required = [
             self.summary_csv,
-            self.latency_breakdown_csv,
             self.communication_efficiency_csv,
             self.threshold_trajectory_csv,
         ]
@@ -349,6 +348,15 @@ class ThesisReproductionRunner:
                 f"{formatted}\n"
                 "Run `.venv/bin/python src/run_thesis_reproduction.py` first."
             )
+
+        latency_rows = []
+        for config in self.configurations:
+            timing = self.read_config_timing(config.config_id)
+            latency_rows.append(self.latency_breakdown_row(config, timing))
+        pd.DataFrame(latency_rows).sort_values("config").to_csv(
+            self.latency_breakdown_csv, index=False
+        )
+        print(f"Rebuilt thesis-style latency breakdown: {self.latency_breakdown_csv}")
 
         if not self.offloading_distribution_csv.exists():
             rows = []
@@ -575,22 +583,34 @@ class ThesisReproductionRunner:
     def latency_breakdown_row(
         self, config: ThesisConfiguration, timing: pd.DataFrame
     ) -> dict:
+        offloaded = self.offloaded_mask(timing)
+        offload_path_mask = offloaded if offloaded.any() else None
         step_1 = self.duration_sum_mean(
             timing, ["sml_inference_s", "offload_decision_s"]
         )
-        step_2 = self.duration_sum_mean(timing, ["edge_buffer_wait_s"])
-        step_3 = self.duration_sum_mean(timing, ["edge_to_server_network_s"])
+        step_2 = self.duration_sum_mean(
+            timing, ["edge_buffer_wait_s"], mask=offload_path_mask
+        )
+        step_3 = self.duration_sum_mean(
+            timing, ["edge_to_server_network_s"], mask=offload_path_mask
+        )
         step_4 = self.duration_sum_mean(
             timing,
             ["server_queue_or_preprocess_s", "lml_inference_s", "server_postprocess_s"],
+            mask=offload_path_mask,
         )
-        step_5 = self.duration_sum_mean(timing, ["server_to_edge_network_s"])
-        step_6 = self.duration_sum_mean(timing, ["edge_receive_to_saved_s"])
+        step_5 = self.duration_sum_mean(
+            timing, ["server_to_edge_network_s"], mask=offload_path_mask
+        )
+        step_6 = self.duration_sum_mean(
+            timing, ["edge_receive_to_saved_s"], mask=offload_path_mask
+        )
         total = step_1 + step_2 + step_3 + step_4 + step_5 + step_6
         tracked = self.numeric_mean(timing, "total_tracked_latency_s")
 
         return {
             "config": config.config_id,
+            "latency_breakdown_mode": "thesis_offloaded_path",
             "decision_method": config.decision_method,
             "offloading_strategy": config.offloading_strategy,
             "controller_batch_size": config.controller_batch_size,
@@ -1324,13 +1344,20 @@ class ThesisReproductionRunner:
         return os.environ.get(key, self.config.get(key, default)).strip()
 
     @staticmethod
-    def duration_sum_mean(timing: pd.DataFrame, columns: list[str]) -> float:
+    def duration_sum_mean(
+        timing: pd.DataFrame, columns: list[str], mask: pd.Series | None = None
+    ) -> float:
         if timing.empty:
             return 0.0
-        total = pd.Series([0.0] * len(timing), index=timing.index)
+        selected = timing
+        if mask is not None:
+            selected = timing[mask]
+        if selected.empty:
+            return 0.0
+        total = pd.Series([0.0] * len(selected), index=selected.index)
         for column in columns:
-            if column in timing.columns:
-                total += pd.to_numeric(timing[column], errors="coerce").fillna(0.0)
+            if column in selected.columns:
+                total += pd.to_numeric(selected[column], errors="coerce").fillna(0.0)
         return float(total.mean())
 
     @staticmethod
