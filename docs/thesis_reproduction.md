@@ -186,9 +186,14 @@ For the full reproduction:
 CONTROLLER_MAX_SAMPLES=all
 ```
 
-Run:
+Run the closest CPU reproduction with explicit CPU overrides:
 
 ```bash
+DEVICE=cpu \
+EXPECA_EDGE_SERVER_DEVICE=cpu \
+THESIS_CONFIGS_TO_RUN=all \
+THESIS_OUTPUT_DIR=CPU_thesis_reproduction \
+LML_BATCHING_MODE=sequential \
 .venv/bin/python src/run_thesis_reproduction.py
 ```
 
@@ -197,28 +202,34 @@ a fresh `/config` request to the edge-device and edge-server. The edge-device
 clears previous results, old offload buffers, and adaptive-threshold state for
 each configuration.
 
-Aggregate outputs are written to:
+For the closest thesis match, run the edge-device on the Raspberry Pi/ARM worker
+and the CPU edge-server on a separate CPU worker. Running both containers on the
+same worker is useful for smoke tests, but it changes queueing, network timing,
+and resource contention.
+
+Aggregate outputs are written to the configured output directory. With the
+command above, that is:
 
 ```text
-results/thesis_reproduction/summary.csv
-results/thesis_reproduction/latency_breakdown.csv
-results/thesis_reproduction/communication_efficiency.csv
-results/thesis_reproduction/threshold_trajectory.csv
-results/thesis_reproduction/summary.md
-results/thesis_reproduction/run_metadata.json
-results/thesis_reproduction/plots/
+results/CPU_thesis_reproduction/summary.csv
+results/CPU_thesis_reproduction/latency_breakdown.csv
+results/CPU_thesis_reproduction/communication_efficiency.csv
+results/CPU_thesis_reproduction/threshold_trajectory.csv
+results/CPU_thesis_reproduction/summary.md
+results/CPU_thesis_reproduction/run_metadata.json
+results/CPU_thesis_reproduction/plots/
 ```
 
 Each individual configuration writes a detailed folder:
 
 ```text
-results/thesis_reproduction/config_001/
-results/thesis_reproduction/config_002/
-results/thesis_reproduction/config_003/
-results/thesis_reproduction/config_004/
-results/thesis_reproduction/config_005/
-results/thesis_reproduction/config_006/
-results/thesis_reproduction/config_007/
+results/CPU_thesis_reproduction/config_001/
+results/CPU_thesis_reproduction/config_002/
+results/CPU_thesis_reproduction/config_003/
+results/CPU_thesis_reproduction/config_004/
+results/CPU_thesis_reproduction/config_005/
+results/CPU_thesis_reproduction/config_006/
+results/CPU_thesis_reproduction/config_007/
 ```
 
 Each config folder contains the raw edge-device CSV, timing CSV, summary, and
@@ -245,8 +256,8 @@ samples, offloading ratio, throughput, and latency aggregates for each config.
 
 `threshold_trajectory.csv` records the adaptive threshold seen by each sample in
 Configs `004` through `007`, plus the post-update threshold when an offloaded
-sample updates the adaptive model. During labeled thesis reproduction runs, the
-adaptive update uses `SML Prediction == True Class` as the correctness feedback.
+sample updates the adaptive model. For thesis reproduction, the adaptive update follows the original implementation:
+it treats `LML Prediction == SML Prediction` as the correctness feedback.
 
 The plot folder contains thesis-style figures:
 
@@ -268,16 +279,9 @@ Regenerate only the figures from existing CSV outputs with:
 If `figure_5_3_threshold_value_updates.png` is empty, check whether the
 per-config raw/timing CSVs contain `Decision Threshold` or
 `Adaptive Threshold After Update`. Older edge-device images did not save these
-columns. By default, the plot-only command preserves only the values actually
-logged by the edge-device. A best-effort offline replay is available only when
-explicitly requested:
-
-```bash
-.venv/bin/python src/run_thesis_reproduction.py --plot-only --reconstruct-thresholds
-```
-
-For thesis reproduction, prefer rebuilding/recreating the edge-device container
-so the raw CSV contains the real logged values.
+columns. The plot-only command intentionally uses only values logged by the
+edge-device, so rebuild and recreate the edge-device container if those columns
+are absent.
 
 ## 7. Repeat With GPU
 
@@ -306,20 +310,22 @@ EXPECA_EDGE_SERVER_DEVICE=cuda
 CONTROLLER_MAX_SAMPLES=all
 ```
 
-Run the same command:
+Run the GPU benchmark configs:
 
 ```bash
+DEVICE=cuda \
+EXPECA_EDGE_SERVER_DEVICE=cuda \
+THESIS_CONFIGS_TO_RUN=002,003,004,005,006,007 \
+THESIS_OUTPUT_DIR=thesis_reproduction_gpu \
 .venv/bin/python src/run_thesis_reproduction.py
 ```
 
 GPU outputs are written to:
 
 ```text
-results/thesis_reproduction/
+results/thesis_reproduction_gpu/
 ```
 
-The CPU and GPU runs are directly comparable because they use the same thesis
-dataset, model pair, and seven configuration definitions.
-
-If you need to keep CPU and GPU outputs side by side, move or copy
-`results/thesis_reproduction/` after the CPU run before launching the GPU run.
+The CPU and GPU runs are directly comparable when they use the same thesis
+dataset, model pair, configuration definitions, and edge-device worker. Config
+`001` is skipped for GPU because it never sends work to the edge-server.

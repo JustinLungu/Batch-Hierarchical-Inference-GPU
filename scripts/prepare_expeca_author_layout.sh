@@ -67,5 +67,5 @@ echo "Author Dockerfile dataset paths are ready:"
 echo "  ${TARGET_IMAGENETTE_VAL}"
 echo "  ${IMAGENETV2_DIR}"
 echo
-echo "For the thesis reproduction setup, select this dataset inside /app/start.sh:"
+echo "For the thesis reproduction setup, configure this dataset path in config/thesis_reproduction.env:"
 echo "  imagenette/val_renamed/"

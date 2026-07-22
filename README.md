@@ -36,7 +36,6 @@ The important configuration IDs are:
 app/
   edge_device/              FastAPI edge-device service, SML, offloading logic
   edge_server/              FastAPI edge-server service, LML, CPU/GPU inference
-  controller_internal/      Original internal controller used inside containers
 
 config/
   defaults.env              Stable paths, ports, image tags, dataset/model paths
@@ -44,7 +43,6 @@ config/
   thesis_configs.csv        Thesis config matrix 001-007
   thesis_reproduction.env   Fixed thesis dataset/model choices
 
-docker/local/               Local container test Dockerfiles
 docs/                       Thesis and ExPECA run documentation
 notebooks/                  ExPECA setup notebooks
 scripts/                    Setup, download, build, and push helpers
