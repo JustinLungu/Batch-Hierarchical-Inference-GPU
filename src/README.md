@@ -25,12 +25,17 @@ python src/run_thesis_reproduction.py --dry-run
 Outputs are written under:
 
 ```text
-results/thesis_reproduction/config_001/
+results/thesis_reproduction/config_001/raw_edge_device_results.csv
+results/thesis_reproduction/config_001/timing_results.csv
 ...
-results/thesis_reproduction/config_007/
+results/thesis_reproduction/config_007/raw_edge_device_results.csv
+results/thesis_reproduction/config_007/timing_results.csv
 results/thesis_reproduction/summary.csv
+results/thesis_reproduction/summary.md
+results/thesis_reproduction/run_metadata.json
 results/thesis_reproduction/latency_breakdown.csv
-results/thesis_reproduction/communication_efficiency.csv
+results/thesis_reproduction/offloading_distribution.csv
+results/thesis_reproduction/per_sample_latency.csv
 results/thesis_reproduction/threshold_trajectory.csv
 results/thesis_reproduction/plots/
 ```

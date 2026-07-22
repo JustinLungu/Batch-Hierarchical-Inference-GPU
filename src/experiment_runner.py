@@ -434,7 +434,6 @@ class ExperimentRunner:
             "offload_roundtrip_mean_s": self.numeric_mean(timing, "offload_roundtrip_s"),
             "throughput_samples_s": self.approx_throughput(timing),
             "analysis_folder": str(self.analysis_dir),
-            "summary_md": str(self.summary_md),
             "timing_results_csv": str(self.timing_results_csv),
         }
 

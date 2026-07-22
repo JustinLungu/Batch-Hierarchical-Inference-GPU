@@ -168,13 +168,14 @@ Each run contains:
 ```text
 summary.csv
 summary.md
+run_metadata.json
 latency_breakdown.csv
-communication_efficiency.csv
 offloading_distribution.csv
 per_sample_latency.csv
 threshold_trajectory.csv
 plots/
-config_00*/
+config_00*/raw_edge_device_results.csv
+config_00*/timing_results.csv
 ```
 
 Regenerate plots from existing CSV outputs:

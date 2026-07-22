@@ -212,11 +212,12 @@ command above, that is:
 
 ```text
 results/CPU_thesis_reproduction/summary.csv
-results/CPU_thesis_reproduction/latency_breakdown.csv
-results/CPU_thesis_reproduction/communication_efficiency.csv
-results/CPU_thesis_reproduction/threshold_trajectory.csv
 results/CPU_thesis_reproduction/summary.md
 results/CPU_thesis_reproduction/run_metadata.json
+results/CPU_thesis_reproduction/latency_breakdown.csv
+results/CPU_thesis_reproduction/offloading_distribution.csv
+results/CPU_thesis_reproduction/per_sample_latency.csv
+results/CPU_thesis_reproduction/threshold_trajectory.csv
 results/CPU_thesis_reproduction/plots/
 ```
 
@@ -232,8 +233,9 @@ results/CPU_thesis_reproduction/config_006/
 results/CPU_thesis_reproduction/config_007/
 ```
 
-Each config folder contains the raw edge-device CSV, timing CSV, summary, and
-metadata for that one configuration.
+Each config folder contains the raw edge-device CSV and the derived timing CSV
+for that one configuration. The aggregate `summary.md` and `run_metadata.json`
+store the human-readable report and run provenance once at the top level.
 
 `latency_breakdown.csv` is the table behind the thesis-style stacked latency
 plot. It contains:
@@ -246,10 +248,6 @@ Step 4: ES Processing
 Step 5: ES to ED Communication
 Step 6: ED Result Saving
 ```
-
-`communication_efficiency.csv` records offloaded samples, offload
-transmissions, average offload batch size, and transmission reductions relative
-to Config `004`.
 
 `summary.csv` includes accuracy, SML accuracy, LML accuracy for offloaded
 samples, offloading ratio, throughput, and latency aggregates for each config.

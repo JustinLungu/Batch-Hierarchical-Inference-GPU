@@ -35,9 +35,6 @@ class ThesisReproductionRunner:
         self.output_dir = self.results_dir / self.output_dir_name()
         self.summary_csv = self.output_dir / "summary.csv"
         self.latency_breakdown_csv = self.output_dir / "latency_breakdown.csv"
-        self.communication_efficiency_csv = (
-            self.output_dir / "communication_efficiency.csv"
-        )
         self.threshold_trajectory_csv = self.output_dir / "threshold_trajectory.csv"
         self.offloading_distribution_csv = (
             self.output_dir / "offloading_distribution.csv"
@@ -69,7 +66,6 @@ class ThesisReproductionRunner:
 
         rows = []
         latency_rows = []
-        communication_rows = []
         threshold_rows = []
         offloading_distribution_rows = []
         per_sample_latency_rows = []
@@ -112,9 +108,6 @@ class ThesisReproductionRunner:
             )
             rows.append(row)
             latency_rows.append(self.metrics.latency_breakdown_row(thesis_config, timing))
-            communication_rows.append(
-                self.metrics.communication_efficiency_row(thesis_config, timing, row)
-            )
             threshold_rows.extend(self.metrics.threshold_trajectory_rows(thesis_config, timing))
             offloading_distribution_rows.append(
                 self.metrics.offloading_distribution_row(thesis_config, timing)
@@ -126,10 +119,6 @@ class ThesisReproductionRunner:
 
         summary = pd.DataFrame(rows).sort_values("thesis_config")
         latency_breakdown = pd.DataFrame(latency_rows).sort_values("config")
-        communication_efficiency = pd.DataFrame(communication_rows).sort_values("config")
-        communication_efficiency = self.metrics.add_communication_baselines(
-            communication_efficiency
-        )
         threshold_trajectory = pd.DataFrame(threshold_rows)
         offloading_distribution = pd.DataFrame(offloading_distribution_rows).sort_values(
             "config"
@@ -138,14 +127,12 @@ class ThesisReproductionRunner:
 
         summary.to_csv(self.summary_csv, index=False)
         latency_breakdown.to_csv(self.latency_breakdown_csv, index=False)
-        communication_efficiency.to_csv(self.communication_efficiency_csv, index=False)
         threshold_trajectory.to_csv(self.threshold_trajectory_csv, index=False)
         offloading_distribution.to_csv(self.offloading_distribution_csv, index=False)
         per_sample_latency.to_csv(self.per_sample_latency_csv, index=False)
         plot_paths = ThesisPlotter(self.plots_dir, self.thesis_base).write_plots(
             summary,
             latency_breakdown,
-            communication_efficiency,
             threshold_trajectory,
             offloading_distribution,
             per_sample_latency,
@@ -157,7 +144,6 @@ class ThesisReproductionRunner:
         print(f"Wrote thesis reproduction folder: {self.output_dir}")
         print(f"Wrote aggregate CSV: {self.summary_csv}")
         print(f"Wrote latency breakdown CSV: {self.latency_breakdown_csv}")
-        print(f"Wrote communication efficiency CSV: {self.communication_efficiency_csv}")
         print(f"Wrote threshold trajectory CSV: {self.threshold_trajectory_csv}")
         print(f"Wrote offloading distribution CSV: {self.offloading_distribution_csv}")
         print(f"Wrote per-sample latency CSV: {self.per_sample_latency_csv}")
@@ -170,7 +156,6 @@ class ThesisReproductionRunner:
     def regenerate_plots_from_csv(self) -> int:
         required = [
             self.summary_csv,
-            self.communication_efficiency_csv,
             self.threshold_trajectory_csv,
         ]
         missing = [path for path in required if not path.exists()]
@@ -222,7 +207,6 @@ class ThesisReproductionRunner:
         plot_paths = ThesisPlotter(self.plots_dir, self.thesis_base).write_plots(
             summary,
             pd.read_csv(self.latency_breakdown_csv, dtype={"config": str}),
-            pd.read_csv(self.communication_efficiency_csv, dtype={"config": str}),
             threshold_trajectory,
             pd.read_csv(self.offloading_distribution_csv, dtype={"config": str}),
             pd.read_csv(self.per_sample_latency_csv, dtype={"config": str}),

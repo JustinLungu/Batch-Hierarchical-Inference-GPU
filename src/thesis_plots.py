@@ -13,7 +13,6 @@ class ThesisPlotter:
         self,
         summary: pd.DataFrame,
         latency_breakdown: pd.DataFrame,
-        communication_efficiency: pd.DataFrame,
         threshold_trajectory: pd.DataFrame,
         offloading_distribution: pd.DataFrame,
         per_sample_latency: pd.DataFrame,
