@@ -44,10 +44,16 @@ python src/run_thesis_reproduction.py --plot-only
 The plot folder contains Figure 5-1 through Figure 5-6 equivalents using the
 same visual structure as the thesis.
 
-The reusable implementation lives in:
+The runnable entrypoint stays intentionally small. The reusable implementation lives in:
 
-- `experiment_runner.py`: shared sample sending, timing analysis, summaries, and
-  metadata.
+- `run_thesis_reproduction.py`: CLI only; parses flags and calls the runner.
+- `thesis_reproduction_runner.py`: orchestrates configs, per-config runs, and aggregate CSV files.
+- `thesis_public_ip_run.py`: one ExPECA public-IP run against already-running containers.
+- `thesis_models.py`: thesis config rows.
+- `thesis_metrics.py`: thesis accuracy, latency, communication, threshold, and batching metrics.
+- `thesis_plots.py`: Figure 5-1 through Figure 5-6 plotting code.
+- `thesis_report.py`: aggregate Markdown summary and metadata JSON writer.
+- `experiment_runner.py`: shared sample sending, timing analysis, and per-run outputs.
 - `constants.py`: local paths, output filenames, and timing column definitions.
 - `utils.py`: config, process, and timing helpers.
 

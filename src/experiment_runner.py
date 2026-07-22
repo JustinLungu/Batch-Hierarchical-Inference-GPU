@@ -391,14 +391,7 @@ class ExperimentRunner:
                 "lml_gpu_memory_fraction": self.config.get("LML_GPU_MEMORY_FRACTION"),
                 "lml_oom_retry": self.config.get("LML_OOM_RETRY"),
             },
-            "outputs": {
-                "source_raw_results_csv": str(self.raw_results_csv),
-                "analysis_folder": str(self.analysis_dir),
-                "raw_results_copy": str(self.raw_results_copy),
-                "timing_results_csv": str(self.timing_results_csv),
-                "summary_md": str(self.summary_md),
-                "metadata_json": str(self.metadata_json),
-            },
+            "analysis_folder": str(self.analysis_dir),
             "result_counts": {
                 "rows": int(len(timing)),
                 "offloaded": self.count_true(timing, "Offloaded"),
