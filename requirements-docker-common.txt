@@ -1,0 +1,10 @@
+# Shared Docker service dependencies for edge-device and edge-server images.
+# These pins are intentionally compatible with both python:3.9-slim and python:3.10-slim.
+fastapi==0.115.14
+numpy==1.26.4
+pandas==2.2.3
+Pillow==10.4.0
+requests==2.32.3
+uvicorn==0.30.6
+python-multipart==0.0.9
+python-dotenv==1.0.1

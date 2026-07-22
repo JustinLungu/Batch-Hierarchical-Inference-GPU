@@ -13,6 +13,7 @@ RUN apt-get update && \
     mkdir -p /var/run/sshd results
 
 # Copy edge device application files
+COPY requirements-docker-common.txt ./
 COPY requirements-docker-cpu.txt ./
 COPY app/edge_device/edge_device.py ./edge_device/
 COPY app/edge_server/edge_server.py ./edge_server/
@@ -20,10 +21,6 @@ COPY app/edge_device/offloading_decision_maker.py ./edge_device/
 COPY app/edge_device/sample_offloading_method.py ./edge_device/
 COPY app/edge_device/entrypoint_edge_device.sh ./
 
-# Copy controller files
-COPY app/controller_internal/Controller_inside_container.py ./
-COPY app/controller_internal/model_registry.py ./
-COPY app/controller_internal/start.sh ./
 
 # Copy models and datasets
 COPY data/models/sml/ ./data/models/sml/
@@ -35,7 +32,6 @@ RUN pip install --no-cache-dir -r requirements-docker-cpu.txt
 
 # Make the entrypoint scripts executable
 RUN chmod +x entrypoint_edge_device.sh
-RUN chmod +x start.sh
 
 # Expose FastAPI port and SSH port
 EXPOSE 8000

@@ -32,9 +32,6 @@ else
 fi
 service ssh start
 
-# Enable external controller
-chmod +x /app/start.sh
-
 # Run the application
 log "Starting edge_device.py"
 exec python edge_device/edge_device.py

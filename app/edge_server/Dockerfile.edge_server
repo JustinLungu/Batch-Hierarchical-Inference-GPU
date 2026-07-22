@@ -13,6 +13,7 @@ RUN apt-get update && \
 
 # Copy application code and supporting files
 COPY app/edge_server/edge_server.py ./edge_server/
+COPY requirements-docker-common.txt ./
 COPY requirements-docker-cpu.txt ./
 COPY data/models/lml/ ./data/models/lml/
 COPY app/edge_server/entrypoint_edge_server.sh ./
