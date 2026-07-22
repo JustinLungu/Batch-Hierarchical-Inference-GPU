@@ -152,11 +152,7 @@ async def update_batch_results(batch_results, ts_sample_sent_to_edge_server, ts_
             
             # Adaptive threshold update feedback loop
             if cached_config.get("decision_method") == "adaptive_threshold":
-                true_class = entry.get("True Class")
-                if true_class is not None:
-                    correct_classification = 1 if entry["SML Prediction"] == int(true_class) else 0
-                else:
-                    correct_classification = 1 if res.get("LML Prediction") == entry["SML Prediction"] else 0
+                correct_classification = 1 if res.get("LML Prediction") == entry["SML Prediction"] else 0
                 t8_start = time.time()
                 offloading_decision_maker.adaptive_threshold_model.update_thresholds(
                     entry["SML Confidence"], correct_classification
