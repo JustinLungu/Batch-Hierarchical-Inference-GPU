@@ -24,7 +24,6 @@ From the repository root:
 ```bash
 scripts/setup_env.sh
 source .venv/bin/activate
-scripts/setup_expeca_notebook_env.sh
 ```
 
 Restart the VS Code/Jupyter kernel after updating the environment.
@@ -107,6 +106,4 @@ should be released. Do not delete unrelated containers or leases.
   latency results are not directly interchangeable.
 - Notebook outputs can contain project names, public IPs, resource IDs, and
   logs. Clear outputs before committing notebook changes.
-- The current benchmark entry point is `src/run_benchmark.py`; old notebook
-  text referring to `src/run_thesis_reproduction.py` describes the former name.
 

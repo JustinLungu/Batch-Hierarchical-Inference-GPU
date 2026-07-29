@@ -28,19 +28,46 @@ analysis of the actual dynamic offload batches.
 - Memory-aware CUDA micro-batching with configurable limits and OOM recovery.
 - Post-processing for actual offload batch sizes in configurations `005`-`007`.
 
-## Local Setup
+## First-Time Local Setup
 
-### 1. Create The Environment
+### 1. Install `uv`
+
+This project uses `uv` for Python installation, dependency resolution, the
+locked environment, and `.venv` creation. Do not install the project
+dependencies manually with `pip`.
+
+Install `uv` on Linux or macOS:
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+Restart the shell if necessary, then verify:
+
+```bash
+uv --version
+```
+
+Other installation methods are documented in the
+[`uv` installation guide](https://docs.astral.sh/uv/getting-started/installation/).
+
+### 2. Create And Activate `.venv`
+
+From the repository root:
 
 ```bash
 scripts/setup_env.sh
 source .venv/bin/activate
-scripts/setup_expeca_notebook_env.sh
 ```
 
-Restart the VS Code/Jupyter kernel after updating the notebook environment.
+`setup_env.sh` runs `uv sync` with the configured Python version. `uv` creates
+`.venv`, installs the locked dependencies from `uv.lock`, and includes the
+Jupyter/ExPECA packages declared in `pyproject.toml`.
 
-### 2. Download The Dataset And Models
+In VS Code, select `.venv/bin/python` as the notebook kernel and restart the
+kernel after resyncing the environment.
+
+### 3. Download The Dataset And Models
 
 ```bash
 scripts/download_dataset.sh --imagenetv2
@@ -59,33 +86,19 @@ LML:     ViT-H/14
 The download script validates that ImageNetV2 contains 1,000 class directories
 and 10,000 images.
 
-### 3. Configure The Runtime
+## Continue With The Full Runbook
 
-Edit `config/experiment.env`. This is the normal user-editable configuration
-file. Set:
+Local setup alone is not enough to launch the experiment. A first-time user
+must also create a Docker registry account, build and push the correct
+CPU/GPU/ARM64 images, obtain ExPECA credentials, reserve workers, create the
+containers, and copy their public IPs into the runtime configuration.
 
-- `DEVICE`: `cpu` or `cuda`.
-- `EDGE_SERVER_IP` and `EDGE_DEVICE_IP`: values printed by the deployment
-  notebook.
-- `CONTROLLER_MAX_SAMPLES`: a small integer for validation or `all`.
-- `THESIS_CONFIGS_TO_RUN`: `all` for CPU or usually
-  `002,003,004,005,006,007` for GPU.
-- `EXPECA_IMAGE_NAMESPACE`: your registry namespace.
-- `EXPECA_EDGE_SERVER_DEVICE`: `cpu` or `cuda`.
-- `LML_*`: server-side inference batching limits.
+Follow the complete guide before running the benchmark:
 
-Stable paths and image tags live in `config/defaults.env`. The fixed thesis
-dataset/model pair lives in `config/thesis_reproduction.env`, and the seven
-experiment definitions live in `config/thesis_configs.csv`.
+**[CPU/GPU benchmark runbook](docs/thesis_reproduction.md)**
 
-## Run The Benchmark
-
-Building images, reserving ExPECA workers, creating containers, running CPU/GPU
-experiments, and releasing resources are documented in:
-
-[CPU/GPU benchmark runbook](docs/thesis_reproduction.md)
-
-After the remote services are running and their IPs are configured:
+After completing the runbook and confirming that both remote services are
+reachable:
 
 ```bash
 .venv/bin/python src/run_benchmark.py --dry-run
@@ -170,14 +183,5 @@ scripts/     Environment, download, build, and push helpers
 src/         Benchmark runner and post-processing packages
 ```
 
-Further documentation:
-
-- [`docs/thesis_reproduction.md`](docs/thesis_reproduction.md): complete CPU/GPU
-  execution runbook.
-- [`docs/thesis_batch_hi_summary.md`](docs/thesis_batch_hi_summary.md): detailed
-  account of the original thesis.
-- [`notebooks/README.md`](notebooks/README.md): notebook selection and resource
-  lifecycle.
-- [`app/README.md`](app/README.md): runtime request flow and service behavior.
-- [`scripts/README.md`](scripts/README.md): helper script reference.
-- [`src/README.md`](src/README.md): runner and analysis package overview.
+For the original thesis summary and complete CPU/GPU execution instructions, see
+[`docs/`](docs/).

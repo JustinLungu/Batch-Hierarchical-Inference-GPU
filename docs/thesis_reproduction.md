@@ -2,7 +2,7 @@
 
 This is the operational guide for running the benchmark on ExPECA. Complete
 the environment, dataset, and model setup in the
-[root README](../README.md#local-setup) before starting here.
+[root README](../README.md#first-time-local-setup) before starting here.
 
 The deployment is:
 
@@ -15,6 +15,90 @@ local benchmark controller
 The edge device always runs the SML on CPU. CPU and GPU experiments change the
 edge-server image and compute device while retaining the same dataset, model
 pair, and experiment definitions.
+
+## Source Material And Credit
+
+This repository reproduces and extends the work provided in:
+
+- Original implementation: [h3nkk44/Batch-Hierarchical-Inference](https://github.com/h3nkk44/Batch-Hierarchical-Inference)
+- Original thesis: [DiVA full-text PDF](https://www.diva-portal.org/smash/get/diva2:2035067/FULLTEXT01.pdf)
+
+The thesis configurations, terminology, and comparison figures are based on
+these sources.
+
+## First-Time Prerequisites
+
+Before building or deploying anything, prepare the following accounts and
+tools.
+
+### Local Tools
+
+- Git.
+- Docker Engine with a running Docker daemon.
+- Docker Buildx when building the ARM64 Raspberry Pi image from an amd64
+  machine.
+- `uv` and the project `.venv`, prepared through the
+  [root setup](../README.md#first-time-local-setup).
+- VS Code/Jupyter with `.venv/bin/python` selected when running notebooks.
+
+Verify the important commands:
+
+```bash
+docker --version
+docker info
+docker buildx version
+uv --version
+.venv/bin/python --version
+```
+
+The normal CPU build does not require cross-platform emulation. The Raspberry
+Pi image does: `scripts/build_expeca_raspberry_pi_image.sh` stops with a clear
+error when Buildx is unavailable.
+
+### Container Registry Account
+
+Create a [Docker Hub](https://hub.docker.com/) account or use another registry that ExPECA can access.
+The build scripts publish:
+
+```text
+<namespace>/hi-framework-edge-server:<cpu-or-gpu-tag>
+<namespace>/hi-framework-edge-device:<amd64-or-arm64-tag>
+```
+
+Set the namespace in `config/experiment.env`:
+
+```env
+EXPECA_IMAGE_NAMESPACE=<registry-namespace>
+```
+
+The ExPECA workers must be able to pull these images. Public Docker Hub
+repositories are the simplest option. If private images are required, configure
+registry authentication according to the ExPECA deployment policy.
+
+Authenticate locally before pushing:
+
+```bash
+docker login
+```
+
+Create the repositories in the registry first if your registry does not create
+them automatically on the initial push.
+
+### ExPECA Access
+
+You need:
+
+1. An ExPECA/Chameleon account.
+2. Access to an ExPECA project.
+3. Permission to reserve the required CPU, Raspberry Pi, and GPU workers.
+4. An OpenRC credential file downloaded from the [ExPECA/Chameleon API Access page](https://testbed.expeca.proj.kth.se/project/api_access/openrc/).
+
+Keep the OpenRC file in the repository root or beside the notebooks so the
+authentication cells can find it. OpenRC files contain credentials and must
+never be committed; the repository ignores `*-openrc.sh`.
+
+The notebooks reserve shared infrastructure. Confirm worker availability and
+release every container and lease when the run is complete.
 
 ## 1. Understand The Configuration Files
 
