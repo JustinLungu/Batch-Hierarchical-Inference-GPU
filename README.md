@@ -161,6 +161,43 @@ results/thesis_reproduction_gpu/
 
 Each run contains an aggregate summary, metadata, thesis-style plot CSVs/images, and per-config raw edge-device plus derived timing CSVs.
 
+## Analyze Actual Offload Batches
+
+Configs `005`-`007` send controller batches of 5, 15, and 45 images, but
+`dynamic_batching` sends only the subset selected for offloading. Analyze how
+edge-server time changes with that actual offloaded batch size without rerunning
+ExPECA:
+
+```bash
+# GPU results (default)
+.venv/bin/python src/analyze_offload_batches.py
+
+# CPU results
+.venv/bin/python src/analyze_offload_batches.py results/CPU_thesis_reproduction
+```
+
+The command writes CSV files and plots under:
+
+```text
+<results-directory>/offload_batch_analysis/
+```
+
+The outputs answer three related questions:
+
+- **Server response time:** total time from
+  `ts_sample_received_at_edge_server` to `ts_results_sent_to_edge_device`.
+- **Per-image server time:** response time divided by the actual number of
+  offloaded images in that request.
+- **Effective throughput:** actual offloaded images divided by response time.
+
+`batch_measurements.csv` contains one row per edge-server request.
+`batch_size_summary.csv` groups requests by config and actual batch size.
+`config_trends.csv` reports correlations and the response-time slope. In the
+plots, points are individual requests, lines are medians, and shaded regions
+show the 25th-75th percentile range. A positive response-time correlation means
+larger offload batches take longer in total; per-image time and throughput show
+whether batching makes each image more or less efficient.
+
 ## Thesis Configurations
 
 | Config | Decision Method | Offloading Strategy | Controller Batch |
@@ -191,7 +228,7 @@ config/
 docs/                       Detailed thesis and ExPECA notes
 notebooks/                  ExPECA setup notebooks
 scripts/                    Setup, download, build, and push helpers
-src/                        Controller, analysis, and plotting code
+src/                        Controller, thesis analysis, and offload batch analysis package
 ```
 
 ## Extra Documentation
