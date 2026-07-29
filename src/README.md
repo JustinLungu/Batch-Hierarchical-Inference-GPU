@@ -59,6 +59,7 @@ The runnable entrypoint stays intentionally small. The reusable implementation l
 - `thesis_plots.py`: Figure 5-1 through Figure 5-6 plotting code.
 - `thesis_report.py`: aggregate Markdown summary and metadata JSON writer.
 - `experiment_runner.py`: shared sample sending, timing analysis, and per-run outputs.
+- `offload_batch_analysis/`: request extraction, grouped trends, and plots for actual offload batch sizes.
 - `constants.py`: local paths, output filenames, and timing column definitions.
 - `utils.py`: config, process, and timing helpers.
 
