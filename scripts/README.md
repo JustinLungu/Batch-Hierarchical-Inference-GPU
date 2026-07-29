@@ -39,12 +39,6 @@ They read stable defaults from `config/defaults.env` and runtime settings from
    scripts/prepare_expeca_author_layout.sh
    ```
 
-5. Install ExPECA notebook dependencies:
-
-   ```bash
-   scripts/setup_expeca_notebook_env.sh
-   ```
-
 ## CPU Images
 
 Set your registry namespace in `config/experiment.env`:
@@ -91,6 +85,6 @@ docs/thesis_reproduction.md
 The main command is:
 
 ```bash
-python src/run_thesis_reproduction.py --dry-run
-python src/run_thesis_reproduction.py
+.venv/bin/python src/run_benchmark.py --dry-run
+.venv/bin/python src/run_benchmark.py
 ```

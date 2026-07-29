@@ -1,68 +1,35 @@
-# Python Runner
+# Python Tools
 
-This folder now has one experiment entrypoint:
-
-```bash
-python src/run_thesis_reproduction.py
-```
-
-That command reproduces the seven thesis configurations on already-running
-ExPECA public-IP containers. It uses:
-
-```text
-config/defaults.env
-config/experiment.env
-config/thesis_reproduction.env
-config/thesis_configs.csv
-```
-
-Preview the resolved setup without contacting ExPECA:
+Run the CPU/GPU benchmark against already-running ExPECA public-IP containers:
 
 ```bash
-python src/run_thesis_reproduction.py --dry-run
+.venv/bin/python src/run_benchmark.py
 ```
 
-Outputs are written under:
-
-```text
-results/thesis_reproduction/config_001/raw_edge_device_results.csv
-results/thesis_reproduction/config_001/timing_results.csv
-...
-results/thesis_reproduction/config_007/raw_edge_device_results.csv
-results/thesis_reproduction/config_007/timing_results.csv
-results/thesis_reproduction/summary.csv
-results/thesis_reproduction/summary.md
-results/thesis_reproduction/run_metadata.json
-results/thesis_reproduction/latency_breakdown.csv
-results/thesis_reproduction/offloading_distribution.csv
-results/thesis_reproduction/per_sample_latency.csv
-results/thesis_reproduction/threshold_trajectory.csv
-results/thesis_reproduction/plots/
-```
-
-Regenerate only the thesis-style plots from existing CSV outputs:
+Preview the resolved configurations or regenerate plots without rerunning ExPECA:
 
 ```bash
-python src/run_thesis_reproduction.py --plot-only
+.venv/bin/python src/run_benchmark.py --dry-run
+.venv/bin/python src/run_benchmark.py --plot-only
 ```
 
-The plot folder contains Figure 5-1 through Figure 5-6 equivalents using the
-same visual structure as the thesis.
+The benchmark reads `config/defaults.env`, `config/experiment.env`,
+`config/thesis_reproduction.env`, and `config/thesis_configs.csv`. Results are
+written to the directory selected by `THESIS_OUTPUT_DIR`.
 
-The runnable entrypoint stays intentionally small. The reusable implementation lives in:
+Analyze actual server batch sizes in an existing CPU or GPU result directory:
 
-- `run_thesis_reproduction.py`: CLI only; parses flags and calls the runner.
-- `thesis_reproduction_runner.py`: orchestrates configs, per-config runs, and aggregate CSV files.
-- `thesis_public_ip_run.py`: one ExPECA public-IP run against already-running containers.
-- `thesis_models.py`: thesis config rows.
-- `thesis_metrics.py`: thesis accuracy, latency, communication, threshold, and batching metrics.
-- `thesis_plots.py`: Figure 5-1 through Figure 5-6 plotting code.
-- `thesis_report.py`: aggregate Markdown summary and metadata JSON writer.
-- `experiment_runner.py`: shared sample sending, timing analysis, and per-run outputs.
-- `offload_batch_analysis/`: request extraction, grouped trends, and plots for actual offload batch sizes.
-- `constants.py`: local paths, output filenames, and timing column definitions.
-- `utils.py`: config, process, and timing helpers.
+```bash
+.venv/bin/python src/analyze_offload_batches.py [results-directory]
+```
 
-The goal of the current repo is thesis reproduction first, then the same
-reproduction with a GPU edge server. Older exploratory runner scripts were
-removed to keep that path obvious.
+## Packages
+
+- `benchmark/`: configuration loading, ExPECA requests, timing derivation,
+  aggregate metrics, reports, and plots for the main CPU/GPU experiment.
+- `offload_batch_analysis/`: grouped trends and plots for actual dynamic
+  offload batch sizes.
+
+The two root Python files own their command-line arguments and call into the
+corresponding packages. Package modules are implementation details and are not
+run directly.

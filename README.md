@@ -1,30 +1,73 @@
 # Batch Hierarchical Inference GPU Experiments
 
-This repository contains the Batch Hierarchical Inference framework adapted for thesis reproduction on ExPECA and GPU offloading benchmarks.
+This repository extends the Batch Hierarchical Inference framework for
+reproducible CPU and GPU experiments on ExPECA.
 
-The main pipeline is:
+The runtime pipeline is:
 
 ```text
-local controller -> ExPECA edge-device container -> ExPECA CPU/GPU edge-server container
+local benchmark controller
+  -> ExPECA edge-device container: MobileNetV3-Large SML
+      -> ExPECA CPU/GPU edge-server container: ViT-H/14 LML
 ```
 
-The edge-device runs the SML. The edge-server runs the LML. Results are saved as thesis-style CSV summaries and plots.
+The benchmark reproduces the seven thesis configurations, records the full
+per-sample timeline, generates thesis-style figures, and supports additional
+analysis of the actual dynamic offload batches.
 
-## Quickstart
+## What This Repository Adds
 
-For normal use, edit only `config/experiment.env`.
+- Automated ImageNetV2 and model downloads with validation.
+- Centralized runtime, model, dataset, and configuration-matrix files.
+- Reproducible CPU, CUDA, and ARM64 Raspberry Pi container builds.
+- ExPECA deployment notebooks for public-IP CPU, GPU/Raspberry Pi, and EP5G
+  setups.
+- A non-interactive runner for configurations `001`-`007`.
+- Per-sample timing, accuracy, offloading, batching, and throughput analysis.
+- Thesis-style plots reconstructed from the timestamps saved by the services.
+- Memory-aware CUDA micro-batching with configurable limits and OOM recovery.
+- Post-processing for actual offload batch sizes in configurations `005`-`007`.
 
-### 1. Set Up Python
+## First-Time Local Setup
+
+### 1. Install `uv`
+
+This project uses `uv` for Python installation, dependency resolution, the
+locked environment, and `.venv` creation. Do not install the project
+dependencies manually with `pip`.
+
+Install `uv` on Linux or macOS:
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+Restart the shell if necessary, then verify:
+
+```bash
+uv --version
+```
+
+Other installation methods are documented in the
+[`uv` installation guide](https://docs.astral.sh/uv/getting-started/installation/).
+
+### 2. Create And Activate `.venv`
+
+From the repository root:
 
 ```bash
 scripts/setup_env.sh
 source .venv/bin/activate
-scripts/setup_expeca_notebook_env.sh
 ```
 
-If VS Code complains about the notebook kernel, restart the kernel after running the setup script.
+`setup_env.sh` runs `uv sync` with the configured Python version. `uv` creates
+`.venv`, installs the locked dependencies from `uv.lock`, and includes the
+Jupyter/ExPECA packages declared in `pyproject.toml`.
 
-### 2. Download Data And Models
+In VS Code, select `.venv/bin/python` as the notebook kernel and restart the
+kernel after resyncing the environment.
+
+### 3. Download The Dataset And Models
 
 ```bash
 scripts/download_dataset.sh --imagenetv2
@@ -32,173 +75,43 @@ scripts/download_models.sh --all
 scripts/prepare_expeca_author_layout.sh
 ```
 
-The thesis reproduction uses:
+The benchmark uses:
 
 ```text
-Dataset: data/datasets/imagenetV2/matched-frequency-format-val
-SML:     mobilenet_v3_large
-LML:     vit_h_14
+Dataset: ImageNetV2 Matched Frequency, 10,000 images
+SML:     MobileNetV3-Large
+LML:     ViT-H/14
 ```
 
-### 3. Configure The Run
+The download script validates that ImageNetV2 contains 1,000 class directories
+and 10,000 images.
 
-Open `config/experiment.env` and set your Docker namespace, public IPs, device, sample count, and config list.
+## Continue With The Full Runbook
 
-CPU example:
+Local setup alone is not enough to launch the experiment. A first-time user
+must also create a Docker registry account, build and push the correct
+CPU/GPU/ARM64 images, obtain ExPECA credentials, reserve workers, create the
+containers, and copy their public IPs into the runtime configuration.
 
-```env
-EXPECA_IMAGE_NAMESPACE=<your-dockerhub-or-registry-namespace>
-DEVICE=cpu
-EXPECA_EDGE_SERVER_DEVICE=cpu
-CONTROLLER_MAX_SAMPLES=100
-THESIS_CONFIGS_TO_RUN=all
-```
+Follow the complete guide before running the benchmark:
 
-GPU example:
+**[CPU/GPU benchmark runbook](docs/thesis_reproduction.md)**
 
-```env
-EXPECA_IMAGE_NAMESPACE=<your-dockerhub-or-registry-namespace>
-DEVICE=cuda
-EXPECA_EDGE_SERVER_DEVICE=cuda
-CONTROLLER_MAX_SAMPLES=all
-THESIS_CONFIGS_TO_RUN=002,003,004,005,006,007
-LML_BATCHING_MODE=auto
-LML_INITIAL_BATCH_SIZE=16
-LML_MIN_BATCH_SIZE=1
-LML_MAX_BATCH_SIZE=256
-LML_GPU_MEMORY_FRACTION=0.9
-LML_OOM_RETRY=true
-```
-
-Config `001` is skipped for GPU because it never offloads to the server.
-
-### 4. Build And Push Images
-
-CPU baseline images:
+After completing the runbook and confirming that both remote services are
+reachable:
 
 ```bash
-scripts/build_expeca_cpu_images.sh
-scripts/push_expeca_cpu_images.sh
+.venv/bin/python src/run_benchmark.py --dry-run
+.venv/bin/python src/run_benchmark.py
 ```
 
-GPU edge-server image:
+Regenerate plots without rerunning ExPECA:
 
 ```bash
-scripts/build_expeca_gpu_server_image.sh
-scripts/push_expeca_gpu_server_image.sh
+.venv/bin/python src/run_benchmark.py --plot-only
 ```
 
-Raspberry Pi / ARM64 edge-device image:
-
-```bash
-scripts/build_expeca_raspberry_pi_image.sh
-scripts/push_expeca_raspberry_pi_image.sh
-```
-
-The ARM64 build requires Docker Buildx and ARM64 emulation on an amd64 laptop.
-
-### 5. Start ExPECA Containers
-
-CPU reproduction notebook:
-
-```text
-notebooks/ExPECA_HI_setup_Public_IP.ipynb
-```
-
-GPU server plus Raspberry Pi edge-device notebook:
-
-```text
-notebooks/ExPECA_HI_setup_GPU_RaspberryPi_Public_IP.ipynb
-```
-
-Run the notebook cells to reserve workers and create containers. Then copy the printed public IPs into `config/experiment.env`:
-
-```env
-EDGE_SERVER_IP=<edge-server-public-ip>
-EDGE_DEVICE_IP=<edge-device-public-ip>
-```
-
-Check that both services are reachable:
-
-```bash
-curl http://$EDGE_SERVER_IP:8001/logs
-curl http://$EDGE_DEVICE_IP:8000/logs
-```
-
-### 6. Run The Benchmark
-
-Dry-run first:
-
-```bash
-.venv/bin/python src/run_thesis_reproduction.py --dry-run
-```
-
-Run the experiment:
-
-```bash
-.venv/bin/python src/run_thesis_reproduction.py
-```
-
-Regenerate plots from existing CSV outputs:
-
-```bash
-.venv/bin/python src/run_thesis_reproduction.py --plot-only
-```
-
-## Results
-
-CPU results are written to:
-
-```text
-results/thesis_reproduction/
-```
-
-GPU results are written to:
-
-```text
-results/thesis_reproduction_gpu/
-```
-
-Each run contains an aggregate summary, metadata, thesis-style plot CSVs/images, and per-config raw edge-device plus derived timing CSVs.
-
-## Analyze Actual Offload Batches
-
-Configs `005`-`007` send controller batches of 5, 15, and 45 images, but
-`dynamic_batching` sends only the subset selected for offloading. Analyze how
-edge-server time changes with that actual offloaded batch size without rerunning
-ExPECA:
-
-```bash
-# GPU results (default)
-.venv/bin/python src/analyze_offload_batches.py
-
-# CPU results
-.venv/bin/python src/analyze_offload_batches.py results/CPU_thesis_reproduction
-```
-
-The command writes CSV files and plots under:
-
-```text
-<results-directory>/offload_batch_analysis/
-```
-
-The outputs answer three related questions:
-
-- **Server response time:** total time from
-  `ts_sample_received_at_edge_server` to `ts_results_sent_to_edge_device`.
-- **Per-image server time:** response time divided by the actual number of
-  offloaded images in that request.
-- **Effective throughput:** actual offloaded images divided by response time.
-
-`batch_measurements.csv` contains one row per edge-server request.
-`batch_size_summary.csv` groups requests by config and actual batch size.
-`config_trends.csv` reports correlations and the response-time slope. In the
-plots, points are individual requests, lines are medians, and shaded regions
-show the 25th-75th percentile range. A positive response-time correlation means
-larger offload batches take longer in total; per-image time and throughput show
-whether batching makes each image more or less efficient.
-
-## Thesis Configurations
+## Configuration Matrix
 
 | Config | Decision Method | Offloading Strategy | Controller Batch |
 |---|---|---|---:|
@@ -210,30 +123,65 @@ whether batching makes each image more or less efficient.
 | `006` | `adaptive_threshold` | `dynamic_batching` | 15 |
 | `007` | `adaptive_threshold` | `dynamic_batching` | 45 |
 
-These are defined in `config/thesis_configs.csv`. Fixed thesis dataset/model choices live in `config/thesis_reproduction.env`. Runtime values live in `config/experiment.env`.
+For `dynamic_batching`, the controller batch is processed by the edge device
+and only the selected subset is sent to the server. It does not wait until 5,
+15, or 45 offloaded samples have accumulated. This matches the original
+application logic and the average offload batches reported in the thesis.
+
+## Main Findings
+
+The completed full-dataset runs support the central result: GPU inference
+substantially reduces the large-model server bottleneck.
+
+- In always-offload config `002`, recorded mean LML inference decreased from
+  approximately `2.27 s` on CPU to `0.27 s` on GPU, an approximately `8.5x`
+  reduction.
+- Config `002` throughput increased from approximately `0.40` to `0.93`
+  samples/s.
+- GPU throughput increased with dynamic controller batches, reaching
+  approximately `2.47` samples/s in config `007`.
+- Larger dynamic batches take longer per server request, but process more
+  samples together and improve effective throughput.
+- Public-IP communication produced much smaller communication components than
+  the thesis EP5G path.
+
+These are not perfectly controlled end-to-end hardware comparisons. The CPU
+and GPU runs used different edge-device placements, and public-IP networking
+does not reproduce the thesis radio path. Config `002` is the clearest
+server-side CPU/GPU comparison because every image follows the LML path.
+Adaptive configurations can also diverge when small prediction differences
+alter the threshold trajectory.
+
+## Actual Offload Batch Analysis
+
+Analyze how edge-server response time changes with the actual selected batch
+sizes in configs `005`-`007` without rerunning ExPECA:
+
+```bash
+# GPU results, using the default directory
+.venv/bin/python src/analyze_offload_batches.py
+
+# A specific CPU result directory
+.venv/bin/python src/analyze_offload_batches.py results/thesis_reproduction
+```
+
+The analysis reports request time, per-image time, effective throughput,
+grouped statistics, and trends. See
+[`src/offload_batch_analysis/README.md`](src/offload_batch_analysis/README.md)
+for output definitions.
 
 ## Repository Layout
 
 ```text
-app/
-  edge_device/              FastAPI edge-device service, SML, offloading logic
-  edge_server/              FastAPI edge-server service, LML, CPU/GPU inference
-
-config/
-  defaults.env              Stable paths, ports, image tags, dataset/model paths
-  experiment.env            Active runtime settings, IPs, CPU/GPU selection
-  thesis_configs.csv        Thesis config matrix 001-007
-  thesis_reproduction.env   Fixed thesis dataset/model choices
-
-docs/                       Detailed thesis and ExPECA notes
-notebooks/                  ExPECA setup notebooks
-scripts/                    Setup, download, build, and push helpers
-src/                        Controller, thesis analysis, and offload batch analysis package
+app/         Edge-device and edge-server FastAPI services
+config/      Runtime settings and experiment definitions
+data/        Downloaded datasets and model checkpoints
+docs/        Detailed runbook and thesis notes
+notebooks/   ExPECA resource deployment notebooks
+results/     Raw, derived, aggregate, and plotted experiment outputs
+scripts/     Environment, download, build, and push helpers
+src/         Benchmark runner and post-processing packages
 ```
 
-## Extra Documentation
-
-- `docs/thesis_batch_hi_summary.md`: detailed thesis summary.
-- `docs/thesis_reproduction.md`: detailed CPU/GPU reproduction notes.
-- `scripts/README.md`: helper script overview.
-- `src/README.md`: runner and analysis internals.
+For the original thesis summary and complete CPU/GPU execution instructions, see
+[`docs/`](docs/).

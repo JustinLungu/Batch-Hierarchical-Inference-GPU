@@ -1,112 +1,167 @@
-# Thesis Reproduction Workflow
+# CPU/GPU Benchmark Runbook
 
-This document is the main runbook for reproducing the seven configurations from
-the thesis and then repeating the same reproduction with a GPU edge server.
+This is the operational guide for running the benchmark on ExPECA. Complete
+the environment, dataset, and model setup in the
+[root README](../README.md#first-time-local-setup) before starting here.
 
-The workflow is:
+The deployment is:
 
 ```text
-laptop runner
+local benchmark controller
   -> ExPECA edge-device container
       -> ExPECA edge-server container
 ```
 
-The edge-device always runs the small model. The edge-server runs the large
-model. Switching from CPU to GPU should only change the edge-server compute
-device and image, not the experiment definitions.
+The edge device always runs the SML on CPU. CPU and GPU experiments change the
+edge-server image and compute device while retaining the same dataset, model
+pair, and experiment definitions.
 
-## 1. Prepare Local Assets
+## Source Material And Credit
 
-Set up the Python environment and download the thesis dataset/models:
+This repository reproduces and extends the work provided in:
+
+- Original implementation: [h3nkk44/Batch-Hierarchical-Inference](https://github.com/h3nkk44/Batch-Hierarchical-Inference)
+- Original thesis: [DiVA full-text PDF](https://www.diva-portal.org/smash/get/diva2:2035067/FULLTEXT01.pdf)
+
+The thesis configurations, terminology, and comparison figures are based on
+these sources.
+
+## First-Time Prerequisites
+
+Before building or deploying anything, prepare the following accounts and
+tools.
+
+### Local Tools
+
+- Git.
+- Docker Engine with a running Docker daemon.
+- Docker Buildx when building the ARM64 Raspberry Pi image from an amd64
+  machine.
+- `uv` and the project `.venv`, prepared through the
+  [root setup](../README.md#first-time-local-setup).
+- VS Code/Jupyter with `.venv/bin/python` selected when running notebooks.
+
+Verify the important commands:
 
 ```bash
-scripts/setup_env.sh
-source .venv/bin/activate
-scripts/download_dataset.sh --imagenetv2
-scripts/download_models.sh --all
-scripts/prepare_expeca_author_layout.sh
-scripts/setup_expeca_notebook_env.sh
+docker --version
+docker info
+docker buildx version
+uv --version
+.venv/bin/python --version
 ```
 
-The thesis reproduction requires:
+The normal CPU build does not require cross-platform emulation. The Raspberry
+Pi image does: `scripts/build_expeca_raspberry_pi_image.sh` stops with a clear
+error when Buildx is unavailable.
+
+### Container Registry Account
+
+Create a [Docker Hub](https://hub.docker.com/) account or use another registry that ExPECA can access.
+The build scripts publish:
 
 ```text
-data/datasets/imagenetV2/matched-frequency-format-val
-data/models/sml/mobilenet_v3_large_imagenet1k_v2.pth
-data/models/lml/ViT_H_14_Weights_IMAGENET1K_SWAG_E2E_V1.pth
+<namespace>/hi-framework-edge-server:<cpu-or-gpu-tag>
+<namespace>/hi-framework-edge-device:<amd64-or-arm64-tag>
 ```
 
-`scripts/download_dataset.sh --imagenetv2` validates that ImageNetV2 contains
-1000 class folders and 10000 images.
+Set the namespace in `config/experiment.env`:
 
-## 2. Understand the Config Files
-
-There are four config files:
-
-```text
-config/defaults.env
-config/experiment.env
-config/thesis_reproduction.env
-config/thesis_configs.csv
+```env
+EXPECA_IMAGE_NAMESPACE=<registry-namespace>
 ```
 
-`config/defaults.env` contains stable paths, download URLs, ports, and default
-Docker image tags.
+The ExPECA workers must be able to pull these images. Public Docker Hub
+repositories are the simplest option. If private images are required, configure
+registry authentication according to the ExPECA deployment policy.
 
-`config/experiment.env` is the runtime file you edit before a run:
+Authenticate locally before pushing:
+
+```bash
+docker login
+```
+
+Create the repositories in the registry first if your registry does not create
+them automatically on the initial push.
+
+### ExPECA Access
+
+You need:
+
+1. An ExPECA/Chameleon account.
+2. Access to an ExPECA project.
+3. Permission to reserve the required CPU, Raspberry Pi, and GPU workers.
+4. An OpenRC credential file downloaded from the [ExPECA/Chameleon API Access page](https://testbed.expeca.proj.kth.se/project/api_access/openrc/).
+
+Keep the OpenRC file in the repository root or beside the notebooks so the
+authentication cells can find it. OpenRC files contain credentials and must
+never be committed; the repository ignores `*-openrc.sh`.
+
+The notebooks reserve shared infrastructure. Confirm worker availability and
+release every container and lease when the run is complete.
+
+## 1. Understand The Configuration Files
+
+The benchmark reads four files:
+
+| File | Responsibility |
+|---|---|
+| `config/defaults.env` | Stable paths, ports, download URLs, and image tags. |
+| `config/experiment.env` | Active device, public IPs, sample limit, selected configs, registry namespace, and GPU batching settings. |
+| `config/thesis_reproduction.env` | Fixed ImageNetV2, MobileNetV3-Large, and ViT-H/14 choices. |
+| `config/thesis_configs.csv` | Configuration matrix `001`-`007`. |
+
+Normally, edit only `config/experiment.env`.
+
+Use a small `CONTROLLER_MAX_SAMPLES` for validation and `all` for a full run.
+Config `001` is omitted from GPU runs because it never calls the edge server.
+
+### CPU Settings
 
 ```env
 DEVICE=cpu
-EDGE_DEVICE_IP=...
-EDGE_SERVER_IP=...
-CONTROLLER_MAX_SAMPLES=all
-EXPECA_IMAGE_NAMESPACE=...
 EXPECA_EDGE_SERVER_DEVICE=cpu
+CONTROLLER_MAX_SAMPLES=all
+THESIS_CONFIGS_TO_RUN=all
+LML_BATCHING_MODE=sequential
 ```
 
-Use `CONTROLLER_MAX_SAMPLES=4` or another small number for a quick validation
-run. Use `CONTROLLER_MAX_SAMPLES=all` for full thesis reproduction.
-
-`config/thesis_reproduction.env` fixes the thesis dataset and model pair:
+Without `THESIS_OUTPUT_DIR`, CPU results default to:
 
 ```text
-ImageNetV2 Matched Frequency
-MobileNetV3-Large
-ViT-H/14
+results/thesis_reproduction/
 ```
 
-`config/thesis_configs.csv` defines the seven thesis configurations. These are
-data, not Python code:
+### GPU Settings
+
+```env
+DEVICE=cuda
+EXPECA_EDGE_SERVER_DEVICE=cuda
+CONTROLLER_MAX_SAMPLES=all
+THESIS_CONFIGS_TO_RUN=002,003,004,005,006,007
+
+LML_BATCHING_MODE=auto
+LML_INITIAL_BATCH_SIZE=16
+LML_MIN_BATCH_SIZE=1
+LML_MAX_BATCH_SIZE=256
+LML_GPU_MEMORY_FRACTION=0.9
+LML_OOM_RETRY=true
+```
+
+Without `THESIS_OUTPUT_DIR`, GPU results default to:
 
 ```text
-001 never_offload
-002 always_offload + send_individually
-003 fixed_threshold + send_individually, threshold 0.3888
-004 adaptive_threshold + send_individually
-005 adaptive_threshold + dynamic_batching, controller batch 5
-006 adaptive_threshold + dynamic_batching, controller batch 15
-007 adaptive_threshold + dynamic_batching, controller batch 45
+results/thesis_reproduction_gpu/
 ```
 
-For Configs `005` through `007`, the thesis batch size is the input/controller
-batch size. That means the important field is:
+`auto` resolves to sequential inference on CPU and adaptive micro-batching on
+CUDA. GPU micro-batching divides an already-received offload request into
+inference chunks; it does not change the edge device's offloading decisions or
+network request size.
 
-```text
-CONTROLLER_BATCH_SIZE=5
-CONTROLLER_BATCH_SIZE=15
-CONTROLLER_BATCH_SIZE=45
-```
+## 2. Build And Push Images
 
-These configs use `OFFLOADING_STRATEGY=dynamic_batching`. They are not the
-size-based batching grid we used earlier.
-
-Config `002` is intentionally kept. In the thesis it is the accuracy upper bound
-and high-latency baseline. For our GPU work it is also the cleanest way to
-isolate large-model/server behavior because every sample is sent to the LML.
-
-## 3. Build and Push CPU Images
-
-Log in to Docker Hub or your container registry:
+Log in to Docker Hub or the configured registry:
 
 ```bash
 docker login
@@ -115,10 +170,10 @@ docker login
 Set your namespace in `config/experiment.env`:
 
 ```env
-EXPECA_IMAGE_NAMESPACE=YOUR_DOCKERHUB_USERNAME_OR_REGISTRY_NAMESPACE
+EXPECA_IMAGE_NAMESPACE=<registry-namespace>
 ```
 
-Build and push the CPU images:
+### CPU Edge Server And Device
 
 ```bash
 scripts/check_expeca_cpu_prereqs.sh
@@ -126,7 +181,28 @@ scripts/build_expeca_cpu_images.sh
 scripts/push_expeca_cpu_images.sh
 ```
 
-## 4. Start CPU Containers on ExPECA
+### GPU Edge Server
+
+```bash
+scripts/build_expeca_gpu_server_image.sh
+scripts/push_expeca_gpu_server_image.sh
+```
+
+### Raspberry Pi / ARM64 Edge Device
+
+```bash
+scripts/build_expeca_raspberry_pi_image.sh
+scripts/push_expeca_raspberry_pi_image.sh
+```
+
+Building ARM64 on an amd64 laptop requires Docker Buildx and ARM64 emulation.
+Image names and tags are printed after successful build and push operations.
+
+Rebuild and recreate containers whenever runtime code under `app/`, dependency
+files, model files, or Dockerfiles change. Analysis-only changes under `src/`
+do not require new container images.
+
+## 3. Deploy A CPU Experiment
 
 Open:
 
@@ -134,196 +210,186 @@ Open:
 notebooks/ExPECA_HI_setup_Public_IP.ipynb
 ```
 
-Run the authentication/setup cells first. Use the same image namespace/tag you
-pushed. For the CPU reproduction:
+Follow the notebook in order:
 
-```python
-EDGE_SERVER_DEVICE = "cpu"
-EDGE_DEVICE_DEVICE = "cpu"
+1. Authenticate with your local OpenRC file.
+2. Inspect stale containers and leases.
+3. Reserve and create the CPU edge server.
+4. Record its public IP.
+5. Reserve and create the edge device.
+6. Pass the edge-server IP to the edge-device container.
+7. Wait for both services to report `Running`.
+
+For the closest thesis hardware layout, use a Raspberry Pi/ARM worker for the
+edge device and a separate CPU worker for the edge server. Placing both
+containers on one server is suitable for smoke testing but changes edge
+processing, contention, and network timing.
+
+## 4. Deploy A GPU Experiment
+
+Open:
+
+```text
+notebooks/ExPECA_HI_setup_GPU_RaspberryPi_Public_IP.ipynb
 ```
 
-Create the edge-server container first and record its public IP. Then create the
-edge-device container and record its public IP. The edge-device environment must
-receive the edge-server public IP.
+The notebook is prepared for:
 
-Confirm both services are reachable:
+- GPU edge server on `worker-05`, using the CUDA image and NVIDIA runtime.
+- Raspberry Pi/ARM64 edge device on `worker-21`, using the ARM64 image.
+- The controller on the local laptop.
 
-```bash
-curl http://EDGE_SERVER_PUBLIC_IP:8001/logs
-curl http://EDGE_DEVICE_PUBLIC_IP:8000/logs
+Run the cells in order, confirm that both containers reach `Running`, and check
+the edge-server logs for:
+
+```text
+Device: cuda
 ```
 
-Then put those public IPs in `config/experiment.env`:
+Worker assignments are shared infrastructure and may change. Confirm current
+availability before reserving them.
+
+For an EP5G rather than public-IP experiment, use
+`notebooks/ExPECA_HI_setup_EP5G.ipynb`. Its network path is materially
+different, so do not compare its communication timings as though they came
+from the public-IP setup.
+
+## 5. Configure And Verify The Endpoints
+
+Copy the public IPs printed by the notebook into `config/experiment.env`:
 
 ```env
-DEVICE=cpu
-EDGE_SERVER_IP=EDGE_SERVER_PUBLIC_IP
-EDGE_DEVICE_IP=EDGE_DEVICE_PUBLIC_IP
-EXPECA_EDGE_SERVER_DEVICE=cpu
+EDGE_SERVER_IP=<edge-server-public-ip>
+EDGE_DEVICE_IP=<edge-device-public-ip>
 ```
 
-## 5. Preview the Thesis Run
-
-Before launching a long run, print the resolved configuration table:
+Verify both services:
 
 ```bash
-.venv/bin/python src/run_thesis_reproduction.py --dry-run
+curl http://$EDGE_SERVER_IP:8001/logs
+curl http://$EDGE_DEVICE_IP:8000/logs
 ```
 
-This validates local thesis assets and prints configs `001` through `007`.
+The services should return startup logs. Before a full GPU run, verify that the
+edge-server diagnostics report CUDA rather than CPU.
 
-## 6. Run the CPU Thesis Reproduction
+The notebooks create infrastructure only. Do not start `/app/start.sh`; the
+supported experiment controller is the local benchmark runner.
 
-For a short validation:
+## 6. Validate And Run
+
+Validate local assets and print the resolved configuration matrix:
+
+```bash
+.venv/bin/python src/run_benchmark.py --dry-run
+```
+
+For an initial end-to-end check, temporarily set:
 
 ```env
 CONTROLLER_MAX_SAMPLES=4
 ```
 
-For the full reproduction:
+After the small run succeeds, restore:
 
 ```env
 CONTROLLER_MAX_SAMPLES=all
 ```
 
-Run the closest CPU reproduction with explicit CPU overrides:
+Run:
 
 ```bash
-DEVICE=cpu \
-EXPECA_EDGE_SERVER_DEVICE=cpu \
-THESIS_CONFIGS_TO_RUN=all \
-THESIS_OUTPUT_DIR=CPU_thesis_reproduction \
-LML_BATCHING_MODE=sequential \
-.venv/bin/python src/run_thesis_reproduction.py
+.venv/bin/python src/run_benchmark.py
 ```
 
-The runner executes all seven configurations in order. Each configuration sends
-a fresh `/config` request to the edge-device and edge-server. The edge-device
-clears previous results, old offload buffers, and adaptive-threshold state for
-each configuration.
+The controller runs locally and sends data to the remote ExPECA containers.
+Keep the laptop powered, awake, online, and the process running until the
+experiment finishes.
 
-For the closest thesis match, run the edge-device on the Raspberry Pi/ARM worker
-and the CPU edge-server on a separate CPU worker. Running both containers on the
-same worker is useful for smoke tests, but it changes queueing, network timing,
-and resource contention.
+Each configuration sends a fresh `/config` request. The services reset their
+results, offload buffers, and adaptive-threshold state before processing the
+next configuration.
 
-Aggregate outputs are written to the configured output directory. With the
-command above, that is:
+## 7. Inspect The Results
 
-```text
-results/CPU_thesis_reproduction/summary.csv
-results/CPU_thesis_reproduction/summary.md
-results/CPU_thesis_reproduction/run_metadata.json
-results/CPU_thesis_reproduction/latency_breakdown.csv
-results/CPU_thesis_reproduction/offloading_distribution.csv
-results/CPU_thesis_reproduction/per_sample_latency.csv
-results/CPU_thesis_reproduction/threshold_trajectory.csv
-results/CPU_thesis_reproduction/plots/
-```
+The result directory contains aggregate reports and plot data, thesis-style
+figures, and one folder per completed configuration. Each config folder keeps
+the raw edge-device result CSV and the derived timing CSV needed for further
+analysis.
 
-Each individual configuration writes a detailed folder:
+The generated figures are:
 
-```text
-results/CPU_thesis_reproduction/config_001/
-results/CPU_thesis_reproduction/config_002/
-results/CPU_thesis_reproduction/config_003/
-results/CPU_thesis_reproduction/config_004/
-results/CPU_thesis_reproduction/config_005/
-results/CPU_thesis_reproduction/config_006/
-results/CPU_thesis_reproduction/config_007/
-```
+1. Accuracy comparison.
+2. Offloading decision distributions.
+3. Adaptive-threshold trajectories.
+4. Per-sample latency comparison.
+5. Six-step latency breakdown.
+6. Throughput and processing time.
 
-Each config folder contains the raw edge-device CSV and the derived timing CSV
-for that one configuration. The aggregate `summary.md` and `run_metadata.json`
-store the human-readable report and run provenance once at the top level.
+Figure 5-5 uses the offloaded execution path for offloading-dependent
+components. In particular, configs `002`-`004` must not average missing
+server-side timings from non-offloaded samples into those components.
 
-`latency_breakdown.csv` is the table behind the thesis-style stacked latency
-plot. It contains:
-
-```text
-Step 1: ED Processing
-Step 2: ED Offload Buffer
-Step 3: ED to ES Communication
-Step 4: ES Processing
-Step 5: ES to ED Communication
-Step 6: ED Result Saving
-```
-
-`summary.csv` includes accuracy, SML accuracy, LML accuracy for offloaded
-samples, offloading ratio, throughput, and latency aggregates for each config.
-
-`threshold_trajectory.csv` records the adaptive threshold seen by each sample in
-Configs `004` through `007`, plus the post-update threshold when an offloaded
-sample updates the adaptive model. For thesis reproduction, the adaptive update follows the original implementation:
-it treats `LML Prediction == SML Prediction` as the correctness feedback.
-
-The plot folder contains thesis-style figures:
-
-```text
-figure_5_1_accuracy_comparison.png
-figure_5_2_offloading_decision_distributions.png
-figure_5_3_threshold_value_updates.png
-figure_5_4_per_sample_latency_comparison.png
-figure_5_5_latency_breakdown.png
-figure_5_6_throughput_processing_time.png
-```
-
-Regenerate only the figures from existing CSV outputs with:
+Regenerate figures from existing aggregate CSV data without rerunning ExPECA:
 
 ```bash
-.venv/bin/python src/run_thesis_reproduction.py --plot-only
+.venv/bin/python src/run_benchmark.py --plot-only
 ```
 
-If `figure_5_3_threshold_value_updates.png` is empty, check whether the
-per-config raw/timing CSVs contain `Decision Threshold` or
-`Adaptive Threshold After Update`. Older edge-device images did not save these
-columns. The plot-only command intentionally uses only values logged by the
-edge-device, so rebuild and recreate the edge-device container if those columns
-are absent.
+If the threshold figure is empty, inspect the per-config raw CSV for `Decision
+Threshold` and `Adaptive Threshold After Update`. Images built from older
+edge-device code may not record those columns.
 
-## 7. Repeat With GPU
+## 8. Analyze Actual Dynamic Batches
 
-After the CPU thesis reproduction works, build and push the GPU edge-server image:
+Configs `005`-`007` use controller batches of 5, 15, and 45. The actual server
+batch contains only the samples selected for offloading from that request.
+
+Analyze GPU results:
 
 ```bash
-scripts/build_expeca_gpu_server_image.sh
-scripts/push_expeca_gpu_server_image.sh
+.venv/bin/python src/analyze_offload_batches.py
 ```
 
-In the ExPECA notebook, keep the edge-device on CPU and switch only the
-edge-server to the GPU image/device:
-
-```python
-EDGE_SERVER_DEVICE = "cuda"
-EDGE_DEVICE_DEVICE = "cpu"
-```
-
-Update `config/experiment.env`:
-
-```env
-DEVICE=cuda
-EDGE_SERVER_IP=GPU_EDGE_SERVER_PUBLIC_IP
-EDGE_DEVICE_IP=EDGE_DEVICE_PUBLIC_IP
-EXPECA_EDGE_SERVER_DEVICE=cuda
-CONTROLLER_MAX_SAMPLES=all
-```
-
-Run the GPU benchmark configs:
+Analyze another result directory:
 
 ```bash
-DEVICE=cuda \
-EXPECA_EDGE_SERVER_DEVICE=cuda \
-THESIS_CONFIGS_TO_RUN=002,003,004,005,006,007 \
-THESIS_OUTPUT_DIR=thesis_reproduction_gpu \
-.venv/bin/python src/run_thesis_reproduction.py
+.venv/bin/python src/analyze_offload_batches.py results/thesis_reproduction
 ```
 
-GPU outputs are written to:
+The analysis writes request-level measurements, grouped batch-size statistics,
+trend calculations, and plots under the selected result directory's
+`offload_batch_analysis/` folder.
 
-```text
-results/thesis_reproduction_gpu/
-```
+## 9. Interpret Differences From The Thesis
 
-The CPU and GPU runs are directly comparable when they use the same thesis
-dataset, model pair, configuration definitions, and edge-device worker. Config
-`001` is skipped for GPU because it never sends work to the edge-server.
+Exact thesis values are not expected unless the complete hardware, network,
+software, and measurement environment is reproduced.
+
+- A regular ExPECA worker runs the edge SML much faster than the thesis
+  Raspberry Pi.
+- The Raspberry Pi/ARM worker produces edge-processing values closer to the
+  thesis hardware.
+- Public-IP communication is much faster than the thesis EP5G/radio path, so
+  ED-to-ES and ES-to-ED components can be nearly invisible.
+- CUDA changes the dominant ES-processing component and allows several images
+  to share one model forward pass.
+- CPU model timing can vary with CPU allocation, thread behavior, dependency
+  versions, container runtime, and load.
+- Adaptive runs can follow different trajectories when prediction differences
+  change subsequent thresholds and offloading decisions.
+
+The most defensible CPU/GPU server comparison is config `002`, because every
+sample is offloaded and threshold behavior cannot change the selected workload.
+
+## 10. Release ExPECA Resources
+
+After collecting results:
+
+1. Destroy the edge-device and edge-server containers created for the run.
+2. Release their worker leases.
+3. Release the GPU worker immediately when it is no longer needed.
+4. Verify in the notebook or ExPECA dashboard that no active resource remains.
+
+Use the GPU notebook's dedicated release section when releasing only the GPU
+edge server. Do not destroy containers or reservations owned by other users.

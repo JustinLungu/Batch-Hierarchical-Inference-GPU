@@ -1,12 +1,18 @@
 import json
 from datetime import datetime, timezone
+
 import pandas as pd
 
-from constants import CONFIG_FILE, DEFAULT_CONFIG_FILE
-from thesis_models import THESIS_CONFIG_FILE, THESIS_REPRODUCTION_FILE
+from .constants import CONFIG_FILE, DEFAULT_CONFIG_FILE
+from .config import (
+    BENCHMARK_DEFAULTS_FILE,
+    CONFIG_MATRIX_FILE,
+    configuration_label,
+)
+from .utils import format_float, format_percent, format_seconds
 
 
-class ThesisReportWriter:
+class BenchmarkReportWriter:
     def __init__(self, context):
         self.context = context
 
@@ -14,11 +20,11 @@ class ThesisReportWriter:
         lines = [
             f"Run: thesis_reproduction_{self.context.device}",
             f"Configurations: {len(summary)}",
-            f"Configuration IDs: {self.context.config_id_label()}",
+            f"Configuration IDs: {configuration_label(self.context.configurations)}",
             f"Sample limit: {self.context.sample_limit}",
-            f"Dataset: {self.context.thesis_base['SAMPLE_PATH']}",
-            f"SML: {self.context.thesis_base['SML_ARCH']}",
-            f"LML: {self.context.thesis_base['LML_ARCH']}",
+            f"Dataset: {self.context.benchmark_defaults['SAMPLE_PATH']}",
+            f"SML: {self.context.benchmark_defaults['SML_ARCH']}",
+            f"LML: {self.context.benchmark_defaults['LML_ARCH']}",
             "",
             "| Config | Decision | Strategy | Controller Batch | Rows | Offloaded | Accuracy | Throughput | Latency Median | LML Mean |",
             "|---|---|---|---:|---:|---:|---:|---:|---:|---:|",
@@ -36,10 +42,10 @@ class ThesisReportWriter:
                 f"{int(row['controller_batch_size'])} | "
                 f"{int(row['rows'])} | "
                 f"{offloaded} | "
-                f"{self.context.metrics.format_percent(row['accuracy'])} | "
-                f"{self.context.metrics.format_float(row['throughput_samples_s'])} | "
-                f"{self.context.metrics.format_seconds(row['total_latency_median_s'])} | "
-                f"{self.context.metrics.format_seconds(row['lml_inference_mean_s'])} |"
+                f"{format_percent(row['accuracy'])} | "
+                f"{format_float(row['throughput_samples_s'])} | "
+                f"{format_seconds(row['total_latency_median_s'])} | "
+                f"{format_seconds(row['lml_inference_mean_s'])} |"
             )
 
         lines.extend(
@@ -62,9 +68,9 @@ class ThesisReportWriter:
             "duration_s": (finished_at - self.context.started_at).total_seconds(),
             "default_config_file": str(DEFAULT_CONFIG_FILE),
             "experiment_config_file": str(CONFIG_FILE),
-            "thesis_reproduction_file": str(THESIS_REPRODUCTION_FILE),
-            "thesis_config_file": str(THESIS_CONFIG_FILE),
-            "thesis_base": self.context.thesis_base,
+            "thesis_reproduction_file": str(BENCHMARK_DEFAULTS_FILE),
+            "thesis_config_file": str(CONFIG_MATRIX_FILE),
+            "benchmark_defaults": self.context.benchmark_defaults,
             "sample_limit": self.context.sample_limit,
             "config_ids": [config.config_id for config in self.context.configurations],
             "configs": [

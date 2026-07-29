@@ -2,17 +2,13 @@ import os
 from pathlib import Path
 
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_CONFIG_FILE = Path(os.environ.get("DEFAULT_CONFIG_FILE", "config/defaults.env"))
 CONFIG_FILE = Path(os.environ.get("CONFIG_FILE", "config/experiment.env"))
 
-EDGE_SERVER_SCRIPT = Path("app/edge_server/edge_server.py")
-EDGE_DEVICE_SCRIPT = Path("app/edge_device/edge_device.py")
 EDGE_DEVICE_RESULTS_FILENAME = "EdgeDevice_results.csv"
 
-ANALYSIS_DIRNAME = "analysis"
 TIMING_RESULTS_FILENAME = "timing_results.csv"
-SUMMARY_FILENAME = "summary.md"
 RUN_METADATA_FILENAME = "run_metadata.json"
 RAW_RESULTS_COPY_FILENAME = "raw_edge_device_results.csv"
 
