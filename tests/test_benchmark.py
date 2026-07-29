@@ -11,7 +11,7 @@ sys.path.insert(0, str(SRC_DIR))
 
 from benchmark.config import BenchmarkConfiguration
 from benchmark.metrics import BenchmarkMetrics
-from benchmark.run import BenchmarkRun
+from benchmark.results import BenchmarkResultProcessor
 from benchmark.utils import load_env_file
 
 
@@ -85,8 +85,7 @@ class BenchmarkTests(unittest.TestCase):
             }
         )
 
-        run = object.__new__(BenchmarkRun)
-        timing = run.add_timing_durations(raw)
+        timing = BenchmarkResultProcessor.add_timing_durations(raw)
 
         self.assertAlmostEqual(timing.loc[0, "sml_inference_s"], 0.2)
         self.assertAlmostEqual(timing.loc[0, "edge_buffer_wait_s"], 0.08)

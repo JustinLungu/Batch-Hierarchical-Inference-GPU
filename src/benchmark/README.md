@@ -36,9 +36,9 @@ creation, and cleanup belong to the ExPECA notebooks.
 
 ## Module Map
 
-### `cli.py`
+### `../run_benchmark.py`
 
-Defines command-line flags and creates `BenchmarkRunner`.
+Defines the public command-line interface and creates `BenchmarkRunner`.
 
 - `--dry-run`: validate assets and print the resolved configurations.
 - `--plot-only`: rebuild reports and plots from existing result CSV files.
@@ -60,25 +60,29 @@ settings and the requested sample limit.
 
 ### `public_ip.py`
 
-Implements one benchmark configuration against already-running ExPECA
-public-IP services. It checks service availability, downloads remote results,
-and writes the per-configuration raw and timing CSV files.
+Specializes one experiment for already-running ExPECA public-IP services. It
+checks service availability, downloads the remote result CSV, and delegates
+post-processing to `results.py`.
 
-### `run.py`
+### `experiment.py`
 
-Contains the shared mechanics for a single run:
+Contains the network and request mechanics for one benchmark configuration:
 
 - loading runtime configuration;
 - preparing multipart image requests;
 - sending controller batches;
-- deriving durations from raw timestamps;
-- assigning edge-server request IDs;
-- writing the normalized timing CSV;
-- calculating basic run-level metrics.
+- collecting images and labels;
+- sending service configuration.
 
 `controller_batch_size` controls how many images one controller request sends
 to the edge device. The actual edge-server batch can be smaller because
 `dynamic_batching` forwards only the samples selected for offloading.
+
+### `results.py`
+
+Converts one configuration's raw timestamps into named durations, writes its
+normalized timing CSV, prints the run summary, and provides the run-level
+metrics consumed by the aggregate analysis.
 
 ### `metrics.py`
 
@@ -94,11 +98,12 @@ Calculates aggregate values used by the reports and plots:
 The Figure 5-5 server path is averaged over offloaded samples. Local samples do
 not contribute zero-valued server durations to that average.
 
-### `plots.py`
+### `plots.py`, `classification_plots.py`, and `performance_plots.py`
 
-Creates the six thesis-style figures from aggregate data frames. Plotting is
-kept separate from metric calculation so existing results can be replotted
-without contacting ExPECA.
+`plots.py` is the small figure orchestrator. Classification, offloading, and
+threshold figures live in `classification_plots.py`; latency and throughput
+figures live in `performance_plots.py`. Plotting remains separate from metric
+calculation so existing results can be replotted without contacting ExPECA.
 
 ### `report.py`
 
@@ -111,9 +116,9 @@ the mapping from timestamp pairs to duration names.
 
 ### `utils.py`
 
-Contains small shared helpers for environment-file parsing, required
-configuration values, boolean conversion, timestamp subtraction, and duration
-formatting.
+Contains shared helpers for environment parsing, image discovery, numeric
+aggregation, timestamp subtraction, duration formatting, and consistent plot
+styling.
 
 ## Configuration Inputs
 
@@ -146,8 +151,8 @@ Existing aggregate outputs can be regenerated with:
 
 - Preserve raw timestamp columns; downstream analysis depends on them.
 - Put new experiment orchestration in `runner.py`, request mechanics in
-  `run.py` or `public_ip.py`, metric formulas in `metrics.py`, and rendering in
-  `plots.py`.
+  `experiment.py` or `public_ip.py`, per-run result conversion in `results.py`,
+  metric formulas in `metrics.py`, and rendering in the plot modules.
 - Do not add interactive prompts to this package. The benchmark is designed to
   run unattended.
 - Keep result schema changes explicit because existing CPU/GPU result folders

@@ -4,9 +4,7 @@ import os
 import uuid
 from pathlib import Path
 
-import pandas as pd
 import requests
-from PIL import Image, UnidentifiedImageError
 from torchvision import datasets
 
 from .constants import (
@@ -15,22 +13,19 @@ from .constants import (
     EDGE_DEVICE_RESULTS_FILENAME,
     RAW_RESULTS_COPY_FILENAME,
     REPO_ROOT,
-    TIMING_COLUMNS,
-    TIMING_DURATIONS,
-    TIMING_OUTPUT_COLUMNS,
     TIMING_RESULTS_FILENAME,
 )
+from .results import BenchmarkResultProcessor
 from .utils import (
-    format_mean_seconds,
-    format_median_seconds,
+    is_valid_image,
     load_env_file,
     require_config,
     require_config_bool,
-    seconds_between,
+    true_class_label,
 )
 
 
-class BenchmarkRun:
+class BenchmarkExperiment:
     MODE = "experiment"
     RUN_LABEL = "experiment"
 
@@ -62,6 +57,11 @@ class BenchmarkRun:
         self.analysis_dir = output_dir
         self.timing_results_csv = self.analysis_dir / TIMING_RESULTS_FILENAME
         self.raw_results_copy = self.analysis_dir / RAW_RESULTS_COPY_FILENAME
+        self.results = BenchmarkResultProcessor(
+            raw_results_csv=self.raw_results_csv,
+            timing_results_csv=self.timing_results_csv,
+            run_metadata=self.result_metadata(),
+        )
 
     def config_files(self) -> list[Path]:
         return [DEFAULT_CONFIG_FILE, CONFIG_FILE]
@@ -177,8 +177,8 @@ class BenchmarkRun:
         for image_path, class_index in dataset.imgs:
             if max_samples is not None and len(image_records) >= max_samples:
                 break
-            if self.is_valid_image(image_path):
-                image_records.append((image_path, self.true_class_label(image_path, class_index)))
+            if is_valid_image(image_path):
+                image_records.append((image_path, true_class_label(image_path, class_index)))
 
         if not image_records:
             raise RuntimeError(f"No valid images found in {sample_path}.")
@@ -209,100 +209,7 @@ class BenchmarkRun:
             )
         return files, metadata
 
-    def load_raw_results(self) -> pd.DataFrame:
-        results = pd.read_csv(self.raw_results_csv)
-        if "UUID" in results.columns:
-            results = results.drop_duplicates(subset=["UUID"], keep="last")
-        for column in TIMING_COLUMNS:
-            if column in results.columns:
-                results[column] = pd.to_numeric(results[column], errors="coerce")
-        return results
-
-    def add_timing_durations(self, results: pd.DataFrame) -> pd.DataFrame:
-        timing = results.copy()
-        for output_column, (end_column, start_column) in TIMING_DURATIONS.items():
-            timing[output_column] = seconds_between(timing, end_column, start_column)
-
-        offloaded_total = seconds_between(
-            timing, "ts_results_received_from_offloading_module", "ts_sml_inference_start"
-        )
-        local_total = seconds_between(
-            timing, "ts_results_saved_not_offloaded", "ts_sml_inference_start"
-        )
-        timing["total_tracked_latency_s"] = offloaded_total.fillna(local_total)
-
-        if "ts_sample_sent_to_edge_server" in timing.columns:
-            batch_keys = timing["ts_sample_sent_to_edge_server"].fillna(-1)
-            timing["edge_server_batch_id"] = pd.factorize(batch_keys)[0]
-            timing.loc[batch_keys == -1, "edge_server_batch_id"] = pd.NA
-
-        return timing
-
-    def write_timing_csv(self, timing: pd.DataFrame) -> None:
-        available_columns = [column for column in TIMING_OUTPUT_COLUMNS if column in timing.columns]
-        output = timing[available_columns].copy()
-
-        for column in output.columns:
-            if column.endswith("_s"):
-                values = pd.to_numeric(output[column], errors="coerce")
-                output[column] = values.map(lambda value: "" if pd.isna(value) else f"{value:.6f}")
-
-        if "edge_server_batch_id" in output.columns:
-            batch_ids = pd.to_numeric(output["edge_server_batch_id"], errors="coerce")
-            output["edge_server_batch_id"] = batch_ids.map(
-                lambda value: "" if pd.isna(value) else str(int(value))
-            )
-
-        output.to_csv(self.timing_results_csv, index=False)
-
-    def build_summary(self, timing: pd.DataFrame) -> str:
-        lines = [
-            f"Run: {self.run_name}",
-            f"Rows: {len(timing)}",
-        ]
-
-        if "Offloaded" in timing.columns:
-            offloaded = timing["Offloaded"].astype(str).str.lower().eq("true")
-            lines.append(f"Offloaded: {offloaded.sum()} / {len(timing)}")
-
-        if "Buffered" in timing.columns:
-            buffered = timing["Buffered"].astype(str).str.lower().eq("true")
-            lines.append(f"Still buffered: {buffered.sum()} / {len(timing)}")
-
-        if "edge_server_batch_id" in timing.columns:
-            batch_sizes = (
-                timing.dropna(subset=["edge_server_batch_id"])
-                .groupby("edge_server_batch_id")
-                .size()
-                .tolist()
-            )
-            lines.append(f"Edge-server batches observed: {len(batch_sizes)}")
-            lines.append(f"Edge-server batch sizes: {batch_sizes}")
-
-        lines.append(
-            "Total tracked latency median: "
-            f"{format_median_seconds(timing['total_tracked_latency_s'])}"
-        )
-        lines.append(f"SML inference mean: {format_mean_seconds(timing['sml_inference_s'])}")
-        lines.append(f"LML inference mean: {format_mean_seconds(timing['lml_inference_s'])}")
-        lines.append(f"Offload roundtrip: {format_mean_seconds(timing['offload_roundtrip_s'])}")
-
-        throughput = self.approx_throughput(timing)
-        if throughput is not None:
-            lines.append(f"Approx throughput: ~{throughput:.2f} samples/s")
-
-        return "\n".join(lines) + "\n"
-
-    def aggregate_metrics(self, timing: pd.DataFrame) -> dict:
-        batch_sizes = []
-        if "edge_server_batch_id" in timing.columns:
-            batch_sizes = (
-                timing.dropna(subset=["edge_server_batch_id"])
-                .groupby("edge_server_batch_id")
-                .size()
-                .tolist()
-            )
-
+    def result_metadata(self) -> dict:
         return {
             "run_name": self.run_name,
             "mode": self.MODE,
@@ -311,21 +218,6 @@ class BenchmarkRun:
             "controller_batch_size": self.controller_batch_size,
             "controller_max_samples": self.controller_max_samples_label,
             "flush_final_batch": self.flush_final_batch,
-            "rows": int(len(timing)),
-            "offloaded": self.count_true(timing, "Offloaded"),
-            "still_buffered": self.count_true(timing, "Buffered"),
-            "edge_server_batches_observed": len(batch_sizes),
-            "edge_server_batch_size_min": min(batch_sizes) if batch_sizes else None,
-            "edge_server_batch_size_median": float(pd.Series(batch_sizes).median())
-            if batch_sizes
-            else None,
-            "edge_server_batch_size_max": max(batch_sizes) if batch_sizes else None,
-            "total_latency_median_s": self.numeric_median(timing, "total_tracked_latency_s"),
-            "total_latency_mean_s": self.numeric_mean(timing, "total_tracked_latency_s"),
-            "sml_inference_mean_s": self.numeric_mean(timing, "sml_inference_s"),
-            "lml_inference_mean_s": self.numeric_mean(timing, "lml_inference_s"),
-            "offload_roundtrip_mean_s": self.numeric_mean(timing, "offload_roundtrip_s"),
-            "throughput_samples_s": self.approx_throughput(timing),
             "analysis_folder": str(self.analysis_dir),
             "timing_results_csv": str(self.timing_results_csv),
         }
@@ -346,61 +238,3 @@ class BenchmarkRun:
             return "all"
         return str(self.controller_max_samples)
 
-    @staticmethod
-    def is_valid_image(image_path: str) -> bool:
-        mime_type, _ = mimetypes.guess_type(image_path)
-        if not mime_type or not mime_type.startswith("image/"):
-            return False
-
-        try:
-            with Image.open(image_path) as img:
-                img.verify()
-            return True
-        except (UnidentifiedImageError, OSError):
-            return False
-
-    @staticmethod
-    def true_class_label(image_path: str, class_index: int) -> int:
-        parent_name = Path(image_path).parent.name
-        if parent_name.isdigit():
-            return int(parent_name)
-        if parent_name.startswith("class_"):
-            suffix = parent_name.removeprefix("class_")
-            if suffix.isdigit():
-                return int(suffix)
-        return class_index
-
-    @staticmethod
-    def count_true(data: pd.DataFrame, column: str) -> int | None:
-        if column not in data.columns:
-            return None
-        return int(data[column].astype(str).str.lower().eq("true").sum())
-
-    @staticmethod
-    def numeric_mean(data: pd.DataFrame, column: str) -> float | None:
-        if column not in data.columns:
-            return None
-        values = pd.to_numeric(data[column], errors="coerce").dropna()
-        if values.empty:
-            return None
-        return float(values.mean())
-
-    @staticmethod
-    def numeric_median(data: pd.DataFrame, column: str) -> float | None:
-        if column not in data.columns:
-            return None
-        values = pd.to_numeric(data[column], errors="coerce").dropna()
-        if values.empty:
-            return None
-        return float(values.median())
-
-    @staticmethod
-    def approx_throughput(timing: pd.DataFrame) -> float | None:
-        start = pd.to_numeric(timing["ts_sml_inference_start"], errors="coerce").min()
-        end_candidates = timing["ts_results_received_from_offloading_module"].fillna(
-            timing.get("ts_results_saved_not_offloaded")
-        )
-        end = pd.to_numeric(end_candidates, errors="coerce").max()
-        if pd.isna(start) or pd.isna(end) or end <= start:
-            return None
-        return len(timing) / (end - start)

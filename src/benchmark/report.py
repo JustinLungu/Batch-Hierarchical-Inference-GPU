@@ -1,9 +1,15 @@
 import json
 from datetime import datetime, timezone
+
 import pandas as pd
 
 from .constants import CONFIG_FILE, DEFAULT_CONFIG_FILE
-from .config import CONFIG_MATRIX_FILE, BENCHMARK_DEFAULTS_FILE
+from .config import (
+    BENCHMARK_DEFAULTS_FILE,
+    CONFIG_MATRIX_FILE,
+    configuration_label,
+)
+from .utils import format_float, format_percent, format_seconds
 
 
 class BenchmarkReportWriter:
@@ -14,7 +20,7 @@ class BenchmarkReportWriter:
         lines = [
             f"Run: thesis_reproduction_{self.context.device}",
             f"Configurations: {len(summary)}",
-            f"Configuration IDs: {self.context.config_id_label()}",
+            f"Configuration IDs: {configuration_label(self.context.configurations)}",
             f"Sample limit: {self.context.sample_limit}",
             f"Dataset: {self.context.benchmark_defaults['SAMPLE_PATH']}",
             f"SML: {self.context.benchmark_defaults['SML_ARCH']}",
@@ -36,10 +42,10 @@ class BenchmarkReportWriter:
                 f"{int(row['controller_batch_size'])} | "
                 f"{int(row['rows'])} | "
                 f"{offloaded} | "
-                f"{self.context.metrics.format_percent(row['accuracy'])} | "
-                f"{self.context.metrics.format_float(row['throughput_samples_s'])} | "
-                f"{self.context.metrics.format_seconds(row['total_latency_median_s'])} | "
-                f"{self.context.metrics.format_seconds(row['lml_inference_mean_s'])} |"
+                f"{format_percent(row['accuracy'])} | "
+                f"{format_float(row['throughput_samples_s'])} | "
+                f"{format_seconds(row['total_latency_median_s'])} | "
+                f"{format_seconds(row['lml_inference_mean_s'])} |"
             )
 
         lines.extend(

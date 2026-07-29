@@ -4,10 +4,10 @@ from pathlib import Path
 import pandas as pd
 import requests
 
-from .run import BenchmarkRun
+from .experiment import BenchmarkExperiment
 
 
-class PublicIpRun(BenchmarkRun):
+class PublicIpExperiment(BenchmarkExperiment):
     MODE = "expeca_public_ip_thesis"
     RUN_LABEL = "thesis"
 
@@ -24,11 +24,11 @@ class PublicIpRun(BenchmarkRun):
     def post_process_results(self) -> pd.DataFrame:
         self.analysis_dir.mkdir(parents=True, exist_ok=True)
         shutil.copy2(self.raw_results_csv, self.raw_results_copy)
-        raw_results = self.load_raw_results()
-        timing_results = self.add_timing_durations(raw_results)
-        self.write_timing_csv(timing_results)
+        raw_results = self.results.load_raw_results()
+        timing_results = self.results.add_timing_durations(raw_results)
+        self.results.write_timing_csv(timing_results)
 
-        print(self.build_summary(timing_results))
+        print(self.results.build_summary(timing_results))
         print(f"Wrote analysis folder: {self.analysis_dir}")
         print(f"Copied raw CSV: {self.raw_results_copy}")
         print(f"Wrote timing CSV: {self.timing_results_csv}")

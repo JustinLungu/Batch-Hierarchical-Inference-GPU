@@ -1,36 +1,45 @@
 import pandas as pd
 
 from .config import BenchmarkConfiguration
+from .utils import (
+    duration_sum_mean,
+    group_accuracy,
+    numeric_mean,
+    numeric_median,
+    offloaded_mask,
+    optional_float,
+    series_mean,
+)
 
 
 class BenchmarkMetrics:
     def latency_breakdown_row(
         self, config: BenchmarkConfiguration, timing: pd.DataFrame
     ) -> dict:
-        offloaded = self.offloaded_mask(timing)
+        offloaded = offloaded_mask(timing)
         offload_path_mask = offloaded if offloaded.any() else None
-        step_1 = self.duration_sum_mean(
+        step_1 = duration_sum_mean(
             timing, ["sml_inference_s", "offload_decision_s"]
         )
-        step_2 = self.duration_sum_mean(
+        step_2 = duration_sum_mean(
             timing, ["edge_buffer_wait_s"], mask=offload_path_mask
         )
-        step_3 = self.duration_sum_mean(
+        step_3 = duration_sum_mean(
             timing, ["edge_to_server_network_s"], mask=offload_path_mask
         )
-        step_4 = self.duration_sum_mean(
+        step_4 = duration_sum_mean(
             timing,
             ["server_queue_or_preprocess_s", "lml_inference_s", "server_postprocess_s"],
             mask=offload_path_mask,
         )
-        step_5 = self.duration_sum_mean(
+        step_5 = duration_sum_mean(
             timing, ["server_to_edge_network_s"], mask=offload_path_mask
         )
-        step_6 = self.duration_sum_mean(
+        step_6 = duration_sum_mean(
             timing, ["edge_receive_to_saved_s"], mask=offload_path_mask
         )
         total = step_1 + step_2 + step_3 + step_4 + step_5 + step_6
-        tracked = self.numeric_mean(timing, "total_tracked_latency_s")
+        tracked = numeric_mean(timing, "total_tracked_latency_s")
 
         return {
             "config": config.config_id,
@@ -46,7 +55,7 @@ class BenchmarkMetrics:
             "step_6_ed_result_saving_s": step_6,
             "latency_breakdown_total_s": total,
             "tracked_latency_mean_s": tracked,
-            "tracked_latency_median_s": self.numeric_median(
+            "tracked_latency_median_s": numeric_median(
                 timing, "total_tracked_latency_s"
             ),
         }
@@ -63,7 +72,7 @@ class BenchmarkMetrics:
         true_class = pd.to_numeric(timing["True Class"], errors="coerce")
         sml_prediction = pd.to_numeric(timing.get("SML Prediction"), errors="coerce")
         lml_prediction = pd.to_numeric(timing.get("LML Prediction"), errors="coerce")
-        offloaded = self.offloaded_mask(timing)
+        offloaded = offloaded_mask(timing)
         final_prediction = sml_prediction.copy()
         final_prediction.loc[offloaded] = lml_prediction.loc[offloaded]
 
@@ -81,36 +90,18 @@ class BenchmarkMetrics:
             "lml_accuracy_offloaded": (
                 float(lml_correct / valid_lml.sum()) if valid_lml.any() else None
             ),
-            "sml_accuracy_not_offloaded": self.group_accuracy(
+            "sml_accuracy_not_offloaded": group_accuracy(
                 true_class, sml_prediction, ~offloaded
             ),
             "correct": int(correct),
         }
 
-    @staticmethod
-    def group_accuracy(
-        true_class: pd.Series, prediction: pd.Series, mask: pd.Series
-    ) -> float | None:
-        valid = true_class.notna() & prediction.notna() & mask
-        if not valid.any():
-            return None
-        return float((prediction[valid] == true_class[valid]).mean())
-
-    @staticmethod
-    def offloaded_mask(timing: pd.DataFrame) -> pd.Series:
-        if "Offloaded" in timing.columns:
-            return timing["Offloaded"].astype(str).str.lower().eq("true")
-        if "LML Prediction" in timing.columns:
-            return pd.to_numeric(timing["LML Prediction"], errors="coerce").notna()
-        if "lml_inference_s" in timing.columns:
-            return pd.to_numeric(timing["lml_inference_s"], errors="coerce").notna()
-        return pd.Series([False] * len(timing), index=timing.index)
 
     def summary_communication_metrics(
         self, timing: pd.DataFrame, summary_row: dict
     ) -> dict:
         rows = len(timing)
-        offloaded = int(self.offloaded_mask(timing).sum())
+        offloaded = int(offloaded_mask(timing).sum())
         transmissions = int(summary_row.get("edge_server_batches_observed") or 0)
         return {
             "offload_ratio": offloaded / rows if rows else 0.0,
@@ -127,22 +118,22 @@ class BenchmarkMetrics:
             return []
 
         rows = []
-        offloaded = self.offloaded_mask(timing)
+        offloaded = offloaded_mask(timing)
         for sample_index, (_, row) in enumerate(timing.iterrows(), start=1):
             rows.append(
                 {
                     "config": config.config_id,
                     "sample_index": sample_index,
                     "filename": row.get("Filename"),
-                    "sml_confidence": self.optional_float(row.get("SML Confidence")),
+                    "sml_confidence": optional_float(row.get("SML Confidence")),
                     "offloaded": bool(offloaded.loc[row.name]),
-                    "decision_threshold": self.optional_float(
+                    "decision_threshold": optional_float(
                         row.get("Decision Threshold")
                     ),
-                    "adaptive_threshold_after_update": self.optional_float(
+                    "adaptive_threshold_after_update": optional_float(
                         row.get("Adaptive Threshold After Update")
                     ),
-                    "threshold_update_duration_s": self.optional_float(
+                    "threshold_update_duration_s": optional_float(
                         row.get("ts_threshold_updated")
                     ),
                 }
@@ -154,7 +145,7 @@ class BenchmarkMetrics:
     ) -> dict:
         true_class = pd.to_numeric(timing.get("True Class"), errors="coerce")
         sml_prediction = pd.to_numeric(timing.get("SML Prediction"), errors="coerce")
-        offloaded = self.offloaded_mask(timing)
+        offloaded = offloaded_mask(timing)
         sml_correct = true_class.notna() & sml_prediction.notna() & (
             sml_prediction == true_class
         )
@@ -183,13 +174,13 @@ class BenchmarkMetrics:
     def per_sample_latency_row(
         self, config: BenchmarkConfiguration, timing: pd.DataFrame
     ) -> dict:
-        offloaded = self.offloaded_mask(timing)
+        offloaded = offloaded_mask(timing)
         latency = pd.to_numeric(timing["total_tracked_latency_s"], errors="coerce")
         return {
             "config": config.config_id,
-            "system_combined_s": self.series_mean(latency),
-            "offloaded_samples_s": self.series_mean(latency[offloaded]),
-            "not_offloaded_samples_s": self.series_mean(latency[~offloaded]),
+            "system_combined_s": series_mean(latency),
+            "offloaded_samples_s": series_mean(latency[offloaded]),
+            "not_offloaded_samples_s": series_mean(latency[~offloaded]),
         }
 
     def add_communication_baselines(self, communication: pd.DataFrame) -> pd.DataFrame:
@@ -203,77 +194,4 @@ class BenchmarkMetrics:
         else:
             output["transmission_reduction_vs_config_004_percent"] = pd.NA
         return output
-
-    @staticmethod
-    def duration_sum_mean(
-        timing: pd.DataFrame, columns: list[str], mask: pd.Series | None = None
-    ) -> float:
-        if timing.empty:
-            return 0.0
-        selected = timing
-        if mask is not None:
-            selected = timing[mask]
-        if selected.empty:
-            return 0.0
-        total = pd.Series([0.0] * len(selected), index=selected.index)
-        for column in columns:
-            if column in selected.columns:
-                total += pd.to_numeric(selected[column], errors="coerce").fillna(0.0)
-        return float(total.mean())
-
-    @staticmethod
-    def numeric_mean(data: pd.DataFrame, column: str) -> float | None:
-        if column not in data.columns:
-            return None
-        values = pd.to_numeric(data[column], errors="coerce").dropna()
-        if values.empty:
-            return None
-        return float(values.mean())
-
-    @staticmethod
-    def numeric_median(data: pd.DataFrame, column: str) -> float | None:
-        if column not in data.columns:
-            return None
-        values = pd.to_numeric(data[column], errors="coerce").dropna()
-        if values.empty:
-            return None
-        return float(values.median())
-
-    @staticmethod
-    def series_mean(values: pd.Series) -> float | None:
-        numeric = pd.to_numeric(values, errors="coerce").dropna()
-        if numeric.empty:
-            return None
-        return float(numeric.mean())
-
-    @staticmethod
-    def count_true(data: pd.DataFrame, column: str) -> int | None:
-        if column not in data.columns:
-            return None
-        return int(data[column].astype(str).str.lower().eq("true").sum())
-
-    @staticmethod
-    def optional_float(value) -> float | None:
-        numeric = pd.to_numeric(pd.Series([value]), errors="coerce").iloc[0]
-        if pd.isna(numeric):
-            return None
-        return float(numeric)
-
-    @staticmethod
-    def format_seconds(value) -> str:
-        if pd.isna(value):
-            return "n/a"
-        return f"{float(value):.4f}s"
-
-    @staticmethod
-    def format_float(value) -> str:
-        if pd.isna(value):
-            return "n/a"
-        return f"{float(value):.2f}"
-
-    @staticmethod
-    def format_percent(value) -> str:
-        if pd.isna(value):
-            return "n/a"
-        return f"{float(value) * 100.0:.2f}%"
 

@@ -30,5 +30,6 @@ python src/analyze_offload_batches.py [results-directory]
 - `offload_batch_analysis/`: grouped trends and plots for actual dynamic
   offload batch sizes.
 
-The two root Python files are intentionally tiny command entrypoints. Package
-modules are implementation details and are not run directly.
+The two root Python files own their command-line arguments and call into the
+corresponding packages. Package modules are implementation details and are not
+run directly.

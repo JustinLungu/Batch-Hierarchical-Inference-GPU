@@ -1,4 +1,3 @@
-import csv
 import os
 import shutil
 from datetime import datetime, timezone
@@ -7,10 +6,18 @@ from pathlib import Path
 import pandas as pd
 
 from .constants import CONFIG_FILE, DEFAULT_CONFIG_FILE, REPO_ROOT, RUN_METADATA_FILENAME, TIMING_RESULTS_FILENAME
-from .config import CONFIG_MATRIX_FILE, BENCHMARK_DEFAULTS_FILE, BenchmarkConfiguration
+from .config import (
+    BENCHMARK_DEFAULTS_FILE,
+    config_value,
+    configuration_label,
+    load_configurations,
+    output_dir_name,
+    print_dry_run,
+    validate_assets,
+)
 from .metrics import BenchmarkMetrics
 from .plots import BenchmarkPlotter
-from .public_ip import PublicIpRun
+from .public_ip import PublicIpExperiment
 from .report import BenchmarkReportWriter
 from .utils import load_env_file, require_config
 
@@ -28,11 +35,13 @@ class BenchmarkRunner:
         self.config.update(load_env_file(CONFIG_FILE))
         self.device = require_config(self.config, "DEVICE")
         self.benchmark_defaults = load_env_file(BENCHMARK_DEFAULTS_FILE)
-        self.configurations = self.load_configurations()
+        self.configurations = load_configurations(
+            selection=config_value(self.config, "THESIS_CONFIGS_TO_RUN", "all")
+        )
         self.results_dir = Path(require_config(self.config, "RESULTS_DIR"))
-        self.sample_limit = self.config_value("CONTROLLER_MAX_SAMPLES", "all")
+        self.sample_limit = config_value(self.config, "CONTROLLER_MAX_SAMPLES", "all")
         self.started_at = datetime.now(timezone.utc)
-        self.output_dir = self.results_dir / self.output_dir_name()
+        self.output_dir = self.results_dir / output_dir_name(self.config, self.device)
         self.summary_csv = self.output_dir / "summary.csv"
         self.latency_breakdown_csv = self.output_dir / "latency_breakdown.csv"
         self.threshold_trajectory_csv = self.output_dir / "threshold_trajectory.csv"
@@ -48,18 +57,23 @@ class BenchmarkRunner:
     def run(self) -> int:
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.plots_dir.mkdir(parents=True, exist_ok=True)
-        self.validate_assets()
+        validate_assets(self.benchmark_defaults)
 
         if self.plot_only:
             return self.regenerate_plots_from_csv()
 
         if self.dry_run:
-            self.print_dry_run()
+            print_dry_run(
+                device=self.device,
+                sample_limit=self.sample_limit,
+                benchmark_defaults=self.benchmark_defaults,
+                configurations=self.configurations,
+            )
             return 0
 
         print(
             "Running thesis reproduction configurations "
-            f"{self.config_id_label()} on DEVICE={self.device}."
+            f"{configuration_label(self.configurations)} on DEVICE={self.device}."
         )
         print(f"Sample limit: {self.sample_limit}")
         print()
@@ -77,22 +91,22 @@ class BenchmarkRunner:
             config_output_dir = self.output_dir / f"config_{benchmark_config.config_id}"
             if config_output_dir.exists():
                 shutil.rmtree(config_output_dir)
-            run = PublicIpRun(
+            experiment = PublicIpExperiment(
                 config_overrides=benchmark_config.overrides(
                     self.benchmark_defaults, self.sample_limit
                 ),
                 config_output_dir=config_output_dir,
             )
             try:
-                run.start_services()
-                run.send_config()
-                run.send_samples()
-                run.download_remote_results()
-                timing = run.post_process_results()
+                experiment.start_services()
+                experiment.send_config()
+                experiment.send_samples()
+                experiment.download_remote_results()
+                timing = experiment.post_process_results()
             finally:
-                run.stop_services()
+                experiment.stop_services()
 
-            row = run.aggregate_metrics(timing)
+            row = experiment.results.aggregate_metrics(timing)
             row.update(
                 {
                     "thesis_config": benchmark_config.config_id,
@@ -256,111 +270,3 @@ class BenchmarkRunner:
         if not timing_csv.exists():
             raise RuntimeError(f"Missing per-config timing CSV: {timing_csv}")
         return pd.read_csv(timing_csv)
-
-    def load_configurations(self) -> list[BenchmarkConfiguration]:
-        if not CONFIG_MATRIX_FILE.exists():
-            raise RuntimeError(f"Missing thesis config table: {CONFIG_MATRIX_FILE}")
-
-        with CONFIG_MATRIX_FILE.open(newline="") as config_file:
-            reader = csv.DictReader(config_file)
-            required_columns = {
-                "config_id",
-                "decision_method",
-                "offloading_strategy",
-                "controller_batch_size",
-                "batch_size",
-                "fixed_threshold_value",
-                "description",
-            }
-            missing_columns = required_columns - set(reader.fieldnames or [])
-            if missing_columns:
-                missing = ", ".join(sorted(missing_columns))
-                raise RuntimeError(
-                    f"{CONFIG_MATRIX_FILE} is missing column(s): {missing}"
-                )
-            configs = [BenchmarkConfiguration.from_csv_row(row) for row in reader]
-
-        if [config.config_id for config in configs] != [
-            "001",
-            "002",
-            "003",
-            "004",
-            "005",
-            "006",
-            "007",
-        ]:
-            raise RuntimeError(
-                f"{CONFIG_MATRIX_FILE} must define configs 001 through 007 in order."
-            )
-        selected_config_ids = self.selected_config_ids()
-        if selected_config_ids is None:
-            return configs
-
-        selected_configs = [
-            config for config in configs if config.config_id in selected_config_ids
-        ]
-        missing = selected_config_ids - {config.config_id for config in selected_configs}
-        if missing:
-            raise ValueError(
-                "THESIS_CONFIGS_TO_RUN contains unknown config id(s): "
-                f"{', '.join(sorted(missing))}"
-            )
-        return selected_configs
-
-    def selected_config_ids(self) -> set[str] | None:
-        raw_value = self.config_value("THESIS_CONFIGS_TO_RUN", "all").strip()
-        if raw_value.lower() in {"all", "001-007", "1-7"}:
-            return None
-        return {
-            item.strip().zfill(3)
-            for item in raw_value.replace(";", ",").split(",")
-            if item.strip()
-        }
-
-    def config_id_label(self) -> str:
-        return ",".join(config.config_id for config in self.configurations)
-
-    def output_dir_name(self) -> str:
-        configured = self.config_value("THESIS_OUTPUT_DIR", "")
-        if configured:
-            return configured
-        if self.device == "cuda":
-            return "thesis_reproduction_gpu"
-        return "thesis_reproduction"
-
-    def validate_assets(self) -> None:
-        required_keys = ["SAMPLE_PATH", "SML_MODEL", "LML_MODEL"]
-        missing = [
-            self.benchmark_defaults[key]
-            for key in required_keys
-            if key not in self.benchmark_defaults or not Path(self.benchmark_defaults[key]).exists()
-        ]
-        if missing:
-            formatted = "\n".join(f"  - {path}" for path in missing)
-            raise RuntimeError(
-                "Missing thesis reproduction asset(s):\n"
-                f"{formatted}\n"
-                "Run `scripts/download_dataset.sh --imagenetv2` and "
-                "`scripts/download_models.sh --all` first."
-            )
-
-    def print_dry_run(self) -> None:
-        print("Thesis reproduction configuration:")
-        print(f"  DEVICE={self.device}")
-        print(f"  CONTROLLER_MAX_SAMPLES={self.sample_limit}")
-        print(f"  SAMPLE_PATH={self.benchmark_defaults['SAMPLE_PATH']}")
-        print(f"  SML_ARCH={self.benchmark_defaults['SML_ARCH']}")
-        print(f"  LML_ARCH={self.benchmark_defaults['LML_ARCH']}")
-        print()
-        for config in self.configurations:
-            print(
-                f"{config.config_id}: "
-                f"DECISION_METHOD={config.decision_method}, "
-                f"OFFLOADING_STRATEGY={config.offloading_strategy}, "
-                f"CONTROLLER_BATCH_SIZE={config.controller_batch_size}, "
-                f"BATCH_SIZE={config.batch_size}, "
-                f"FIXED_THRESHOLD_VALUE={config.fixed_threshold_value}"
-            )
-
-    def config_value(self, key: str, default: str) -> str:
-        return os.environ.get(key, self.config.get(key, default)).strip()

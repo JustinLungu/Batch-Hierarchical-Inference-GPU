@@ -30,7 +30,8 @@ experiment logic.
 
 ## Data Flow
 
-1. `cli.py` loads the configured controller batch size for configs `005`-`007`.
+1. `src/analyze_offload_batches.py` loads the configured controller batch size
+   for configs `005`-`007`.
 2. It reads each configuration's raw edge-device CSV.
 3. `OffloadBatchAnalyzer` groups sample rows that share
    `ts_sample_sent_to_edge_server`; those rows belong to one server request.
@@ -62,7 +63,7 @@ The package also separates:
 
 ## Module Map
 
-### `cli.py`
+### `../analyze_offload_batches.py`
 
 Loads result paths and configuration context, runs the analysis, writes CSV
 files and plots, and prints a short trend summary.
@@ -81,6 +82,11 @@ Contains the analysis logic:
 
 The analyzer validates required columns and rejects inconsistent timestamps
 within a single inferred server request.
+
+### `utils.py`
+
+Contains the numeric extraction, correlation, trend, and batch-consistency
+helpers shared by the analyzer.
 
 ### `plots.py`
 
