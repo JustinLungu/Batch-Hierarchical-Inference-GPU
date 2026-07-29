@@ -1,11 +1,7 @@
 import json
 import mimetypes
 import os
-import shutil
-import subprocess
-import sys
 import uuid
-from datetime import datetime, timezone
 from pathlib import Path
 
 import pandas as pd
@@ -13,23 +9,18 @@ import requests
 from PIL import Image, UnidentifiedImageError
 from torchvision import datasets
 
-from constants import (
-    ANALYSIS_DIRNAME,
+from .constants import (
     CONFIG_FILE,
     DEFAULT_CONFIG_FILE,
     EDGE_DEVICE_RESULTS_FILENAME,
-    EDGE_DEVICE_SCRIPT,
-    EDGE_SERVER_SCRIPT,
     RAW_RESULTS_COPY_FILENAME,
     REPO_ROOT,
-    RUN_METADATA_FILENAME,
-    SUMMARY_FILENAME,
     TIMING_COLUMNS,
     TIMING_DURATIONS,
     TIMING_OUTPUT_COLUMNS,
     TIMING_RESULTS_FILENAME,
 )
-from utils import (
+from .utils import (
     format_mean_seconds,
     format_median_seconds,
     load_env_file,
@@ -39,24 +30,19 @@ from utils import (
 )
 
 
-class ExperimentRunner:
+class BenchmarkRun:
     MODE = "experiment"
     RUN_LABEL = "experiment"
-    ANALYSIS_LABEL = "experiment"
 
     def __init__(
         self,
-        config_overrides: dict[str, str] | None = None,
-        analysis_suffix: str | None = None,
+        config_overrides: dict[str, str],
+        output_dir: Path,
     ):
         os.chdir(REPO_ROOT)
         self.config = self.load_config()
         if config_overrides:
             self.config.update(config_overrides)
-        self.analysis_suffix = analysis_suffix
-        self.started_at = datetime.now(timezone.utc)
-        self.run_id = self.started_at.strftime("%Y%m%dT%H%M%SZ")
-
         self.edge_device_host = require_config(self.config, "EDGE_DEVICE_IP")
         self.edge_server_host = require_config(self.config, "EDGE_SERVER_IP")
         self.edge_device_port = require_config(self.config, "EDGE_DEVICE_PORT")
@@ -73,10 +59,8 @@ class ExperimentRunner:
         self.flush_final_batch = require_config_bool(self.config, "FLUSH_FINAL_BATCH")
 
         self.run_name = self._build_run_name()
-        self.analysis_dir = results_dir / self._analysis_dirname()
+        self.analysis_dir = output_dir
         self.timing_results_csv = self.analysis_dir / TIMING_RESULTS_FILENAME
-        self.summary_md = self.analysis_dir / SUMMARY_FILENAME
-        self.metadata_json = self.analysis_dir / RUN_METADATA_FILENAME
         self.raw_results_copy = self.analysis_dir / RAW_RESULTS_COPY_FILENAME
 
     def config_files(self) -> list[Path]:
@@ -105,27 +89,6 @@ class ExperimentRunner:
         if max_samples <= 0:
             raise ValueError("CONTROLLER_MAX_SAMPLES must be positive when it is numeric.")
         return max_samples
-
-    def run(self) -> int:
-        completed = False
-        try:
-            self.start_services()
-            self.send_config()
-            self.send_samples()
-            print(f"Raw results saved by edge device: {self.raw_results_csv}")
-            completed = True
-        finally:
-            self.stop_services()
-
-        if completed:
-            self.post_process_results()
-        return 0
-
-    def start_services(self) -> None:
-        raise NotImplementedError
-
-    def stop_services(self) -> None:
-        raise NotImplementedError
 
     def send_config(self) -> None:
         print("Sending configuration...")
@@ -246,25 +209,6 @@ class ExperimentRunner:
             )
         return files, metadata
 
-    def post_process_results(self) -> pd.DataFrame:
-        self.analysis_dir.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(self.raw_results_csv, self.raw_results_copy)
-        raw_results = self.load_raw_results()
-        timing_results = self.add_timing_durations(raw_results)
-
-        self.write_timing_csv(timing_results)
-        summary = self.build_summary(timing_results)
-        self.summary_md.write_text(summary)
-        self.write_metadata(timing_results)
-
-        print(summary)
-        print(f"Wrote analysis folder: {self.analysis_dir}")
-        print(f"Copied raw CSV: {self.raw_results_copy}")
-        print(f"Wrote timing CSV: {self.timing_results_csv}")
-        print(f"Wrote summary: {self.summary_md}")
-        print(f"Wrote metadata: {self.metadata_json}")
-        return timing_results
-
     def load_raw_results(self) -> pd.DataFrame:
         results = pd.read_csv(self.raw_results_csv)
         if "UUID" in results.columns:
@@ -349,57 +293,6 @@ class ExperimentRunner:
 
         return "\n".join(lines) + "\n"
 
-    def write_metadata(self, timing: pd.DataFrame) -> None:
-        finished_at = datetime.now(timezone.utc)
-        metadata = {
-            "run_id": self.run_id,
-            "run_name": self.run_name,
-            "mode": self.MODE,
-            "started_at_utc": self.started_at.isoformat(),
-            "finished_at_utc": finished_at.isoformat(),
-            "duration_s": (finished_at - self.started_at).total_seconds(),
-            "python_executable": sys.executable,
-            "command": " ".join(sys.argv),
-            "git_commit": self.git_commit(),
-            "services": {
-                "edge_device_url": self.edge_device_url,
-                "edge_server_url": self.edge_server_url,
-                "edge_device_script": str(EDGE_DEVICE_SCRIPT),
-                "edge_server_script": str(EDGE_SERVER_SCRIPT),
-            },
-            "experiment": {
-                "device": self.device,
-                "sample_path": require_config(self.config, "SAMPLE_PATH"),
-                "sml_architecture": require_config(self.config, "SML_ARCH"),
-                "sml_model": require_config(self.config, "SML_MODEL"),
-                "lml_architecture": require_config(self.config, "LML_ARCH"),
-                "lml_model": require_config(self.config, "LML_MODEL"),
-                "decision_method": require_config(self.config, "DECISION_METHOD"),
-                "offloading_strategy": require_config(self.config, "OFFLOADING_STRATEGY"),
-                "fixed_threshold_value": float(
-                    require_config(self.config, "FIXED_THRESHOLD_VALUE")
-                ),
-                "batch_size": self.batch_size,
-                "controller_batch_size": self.controller_batch_size,
-                "controller_max_samples": self.controller_max_samples_label,
-                "flush_final_batch": self.flush_final_batch,
-                "batch_wait_time": float(require_config(self.config, "BATCH_WAIT_TIME")),
-                "lml_batching_mode": self.config.get("LML_BATCHING_MODE"),
-                "lml_initial_batch_size": self.config.get("LML_INITIAL_BATCH_SIZE"),
-                "lml_min_batch_size": self.config.get("LML_MIN_BATCH_SIZE"),
-                "lml_max_batch_size": self.config.get("LML_MAX_BATCH_SIZE"),
-                "lml_gpu_memory_fraction": self.config.get("LML_GPU_MEMORY_FRACTION"),
-                "lml_oom_retry": self.config.get("LML_OOM_RETRY"),
-            },
-            "analysis_folder": str(self.analysis_dir),
-            "result_counts": {
-                "rows": int(len(timing)),
-                "offloaded": self.count_true(timing, "Offloaded"),
-                "still_buffered": self.count_true(timing, "Buffered"),
-            },
-        }
-        self.metadata_json.write_text(json.dumps(metadata, indent=2) + "\n")
-
     def aggregate_metrics(self, timing: pd.DataFrame) -> dict:
         batch_sizes = []
         if "edge_server_batch_id" in timing.columns:
@@ -453,12 +346,6 @@ class ExperimentRunner:
             return "all"
         return str(self.controller_max_samples)
 
-    def _analysis_dirname(self) -> str:
-        dirname = f"{ANALYSIS_DIRNAME}_{self.ANALYSIS_LABEL}_{self.device}"
-        if self.analysis_suffix:
-            dirname = f"{dirname}_{self.analysis_suffix}"
-        return dirname
-
     @staticmethod
     def is_valid_image(image_path: str) -> bool:
         mime_type, _ = mimetypes.guess_type(image_path)
@@ -482,19 +369,6 @@ class ExperimentRunner:
             if suffix.isdigit():
                 return int(suffix)
         return class_index
-
-    @staticmethod
-    def git_commit() -> str | None:
-        try:
-            result = subprocess.run(
-                ["git", "rev-parse", "HEAD"],
-                check=True,
-                capture_output=True,
-                text=True,
-            )
-            return result.stdout.strip()
-        except (OSError, subprocess.CalledProcessError):
-            return None
 
     @staticmethod
     def count_true(data: pd.DataFrame, column: str) -> int | None:

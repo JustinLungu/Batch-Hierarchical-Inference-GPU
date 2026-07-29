@@ -167,7 +167,7 @@ EXPECA_EDGE_SERVER_DEVICE=cpu
 Before launching a long run, print the resolved configuration table:
 
 ```bash
-.venv/bin/python src/run_thesis_reproduction.py --dry-run
+.venv/bin/python src/run_benchmark.py --dry-run
 ```
 
 This validates local thesis assets and prints configs `001` through `007`.
@@ -194,7 +194,7 @@ EXPECA_EDGE_SERVER_DEVICE=cpu \
 THESIS_CONFIGS_TO_RUN=all \
 THESIS_OUTPUT_DIR=CPU_thesis_reproduction \
 LML_BATCHING_MODE=sequential \
-.venv/bin/python src/run_thesis_reproduction.py
+.venv/bin/python src/run_benchmark.py
 ```
 
 The runner executes all seven configurations in order. Each configuration sends
@@ -271,7 +271,7 @@ figure_5_6_throughput_processing_time.png
 Regenerate only the figures from existing CSV outputs with:
 
 ```bash
-.venv/bin/python src/run_thesis_reproduction.py --plot-only
+.venv/bin/python src/run_benchmark.py --plot-only
 ```
 
 If `figure_5_3_threshold_value_updates.png` is empty, check whether the
@@ -315,7 +315,7 @@ DEVICE=cuda \
 EXPECA_EDGE_SERVER_DEVICE=cuda \
 THESIS_CONFIGS_TO_RUN=002,003,004,005,006,007 \
 THESIS_OUTPUT_DIR=thesis_reproduction_gpu \
-.venv/bin/python src/run_thesis_reproduction.py
+.venv/bin/python src/run_benchmark.py
 ```
 
 GPU outputs are written to:

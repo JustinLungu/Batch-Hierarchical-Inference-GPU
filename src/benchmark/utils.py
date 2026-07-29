@@ -1,9 +1,6 @@
-import subprocess
-import time
 from pathlib import Path
 
 import pandas as pd
-import requests
 
 
 def load_env_file(path: Path) -> dict[str, str]:
@@ -32,24 +29,6 @@ def require_config(config: dict[str, str], key: str) -> str:
 def require_config_bool(config: dict[str, str], key: str) -> bool:
     value = require_config(config, key).strip().lower()
     return value in {"1", "true", "yes", "y", "on"}
-
-
-def wait_for_server(url: str, timeout: float = 60.0) -> None:
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        try:
-            response = requests.get(f"{url}/docs", timeout=1)
-            if response.status_code == 200:
-                return
-        except requests.RequestException:
-            time.sleep(1)
-    raise RuntimeError(f"Server did not become ready: {url}")
-
-
-def start_process(command: list[str], log_path: Path, env: dict[str, str]) -> subprocess.Popen:
-    log_path.parent.mkdir(parents=True, exist_ok=True)
-    log_file = log_path.open("w")
-    return subprocess.Popen(command, stdout=log_file, stderr=subprocess.STDOUT, env=env)
 
 
 def seconds_between(df: pd.DataFrame, end: str, start: str) -> pd.Series:

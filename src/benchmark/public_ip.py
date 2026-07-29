@@ -4,24 +4,22 @@ from pathlib import Path
 import pandas as pd
 import requests
 
-from constants import RAW_RESULTS_COPY_FILENAME, TIMING_RESULTS_FILENAME
-from experiment_runner import ExperimentRunner
+from .run import BenchmarkRun
 
 
-class ThesisPublicIpRun(ExperimentRunner):
+class PublicIpRun(BenchmarkRun):
     MODE = "expeca_public_ip_thesis"
     RUN_LABEL = "thesis"
-    ANALYSIS_LABEL = "thesis"
 
     def __init__(
         self,
         config_overrides: dict[str, str],
         config_output_dir: Path,
     ):
-        super().__init__(config_overrides=config_overrides)
-        self.analysis_dir = config_output_dir
-        self.timing_results_csv = self.analysis_dir / TIMING_RESULTS_FILENAME
-        self.raw_results_copy = self.analysis_dir / RAW_RESULTS_COPY_FILENAME
+        super().__init__(
+            config_overrides=config_overrides,
+            output_dir=config_output_dir,
+        )
 
     def post_process_results(self) -> pd.DataFrame:
         self.analysis_dir.mkdir(parents=True, exist_ok=True)

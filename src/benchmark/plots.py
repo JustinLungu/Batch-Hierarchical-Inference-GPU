@@ -4,10 +4,10 @@ from pathlib import Path
 import pandas as pd
 
 
-class ThesisPlotter:
-    def __init__(self, plots_dir: Path, thesis_base: dict[str, str]):
+class BenchmarkPlotter:
+    def __init__(self, plots_dir: Path, benchmark_defaults: dict[str, str]):
         self.plots_dir = plots_dir
-        self.thesis_base = thesis_base
+        self.benchmark_defaults = benchmark_defaults
 
     def write_plots(
         self,
@@ -17,7 +17,7 @@ class ThesisPlotter:
         offloading_distribution: pd.DataFrame,
         per_sample_latency: pd.DataFrame,
     ) -> list[Path]:
-        matplotlib_cache = Path("/tmp") / "matplotlib-thesis-reproduction"
+        matplotlib_cache = Path("/tmp") / "matplotlib-benchmark"
         matplotlib_cache.mkdir(parents=True, exist_ok=True)
         os.environ.setdefault("MPLCONFIGDIR", str(matplotlib_cache))
 
@@ -185,7 +185,7 @@ class ThesisPlotter:
                     alpha=0.12,
                 )
 
-        fixed_threshold = float(self.thesis_base.get("FIXED_THRESHOLD_VALUE", 0.3888))
+        fixed_threshold = float(self.benchmark_defaults.get("FIXED_THRESHOLD_VALUE", 0.3888))
         axis.axhline(fixed_threshold, color="gray", linewidth=0.8, alpha=0.6, label="Fixed Threshold")
         axis.set_title("Threshold Over Update")
         axis.set_xlabel("Normalized Update Sequence")

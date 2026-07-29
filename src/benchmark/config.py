@@ -2,12 +2,12 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
-THESIS_CONFIG_FILE = Path("config/thesis_configs.csv")
-THESIS_REPRODUCTION_FILE = Path("config/thesis_reproduction.env")
+CONFIG_MATRIX_FILE = Path("config/thesis_configs.csv")
+BENCHMARK_DEFAULTS_FILE = Path("config/thesis_reproduction.env")
 
 
 @dataclass(frozen=True)
-class ThesisConfiguration:
+class BenchmarkConfiguration:
     config_id: str
     decision_method: str
     offloading_strategy: str
@@ -17,7 +17,7 @@ class ThesisConfiguration:
     description: str
 
     @classmethod
-    def from_csv_row(cls, row: dict[str, str]) -> "ThesisConfiguration":
+    def from_csv_row(cls, row: dict[str, str]) -> "BenchmarkConfiguration":
         return cls(
             config_id=row["config_id"].strip(),
             decision_method=row["decision_method"].strip(),
@@ -28,9 +28,9 @@ class ThesisConfiguration:
             description=row["description"].strip(),
         )
 
-    def overrides(self, thesis_base: dict[str, str], sample_limit: str) -> dict[str, str]:
+    def overrides(self, benchmark_defaults: dict[str, str], sample_limit: str) -> dict[str, str]:
         return {
-            **thesis_base,
+            **benchmark_defaults,
             "DECISION_METHOD": self.decision_method,
             "OFFLOADING_STRATEGY": self.offloading_strategy,
             "FIXED_THRESHOLD_VALUE": self.fixed_threshold_value,

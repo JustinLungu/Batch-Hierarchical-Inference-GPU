@@ -294,7 +294,7 @@ compared.
 In this repository, the seven configurations can be run non-interactively with:
 
 ```bash
-.venv/bin/python src/run_thesis_reproduction.py
+.venv/bin/python src/run_benchmark.py
 ```
 
 The runner keeps Config 002, `always_offload + send_individually`, because it is

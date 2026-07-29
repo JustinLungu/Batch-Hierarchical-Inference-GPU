@@ -91,6 +91,6 @@ docs/thesis_reproduction.md
 The main command is:
 
 ```bash
-python src/run_thesis_reproduction.py --dry-run
-python src/run_thesis_reproduction.py
+python src/run_benchmark.py --dry-run
+python src/run_benchmark.py
 ```

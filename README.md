@@ -130,19 +130,19 @@ curl http://$EDGE_DEVICE_IP:8000/logs
 Dry-run first:
 
 ```bash
-.venv/bin/python src/run_thesis_reproduction.py --dry-run
+.venv/bin/python src/run_benchmark.py --dry-run
 ```
 
 Run the experiment:
 
 ```bash
-.venv/bin/python src/run_thesis_reproduction.py
+.venv/bin/python src/run_benchmark.py
 ```
 
 Regenerate plots from existing CSV outputs:
 
 ```bash
-.venv/bin/python src/run_thesis_reproduction.py --plot-only
+.venv/bin/python src/run_benchmark.py --plot-only
 ```
 
 ## Results
@@ -228,7 +228,7 @@ config/
 docs/                       Detailed thesis and ExPECA notes
 notebooks/                  ExPECA setup notebooks
 scripts/                    Setup, download, build, and push helpers
-src/                        Controller, thesis analysis, and offload batch analysis package
+src/                        Benchmark and offload batch analysis packages
 ```
 
 ## Extra Documentation

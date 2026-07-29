@@ -1,11 +1,11 @@
 import pandas as pd
 
-from thesis_models import ThesisConfiguration
+from .config import BenchmarkConfiguration
 
 
-class ThesisMetrics:
+class BenchmarkMetrics:
     def latency_breakdown_row(
-        self, config: ThesisConfiguration, timing: pd.DataFrame
+        self, config: BenchmarkConfiguration, timing: pd.DataFrame
     ) -> dict:
         offloaded = self.offloaded_mask(timing)
         offload_path_mask = offloaded if offloaded.any() else None
@@ -106,33 +106,6 @@ class ThesisMetrics:
             return pd.to_numeric(timing["lml_inference_s"], errors="coerce").notna()
         return pd.Series([False] * len(timing), index=timing.index)
 
-    def communication_efficiency_row(
-        self,
-        config: ThesisConfiguration,
-        timing: pd.DataFrame,
-        summary_row: dict,
-    ) -> dict:
-        rows = len(timing)
-        offloaded = int(self.offloaded_mask(timing).sum())
-        transmissions = int(summary_row.get("edge_server_batches_observed") or 0)
-        average_offload_batch = offloaded / transmissions if transmissions else 0.0
-        offload_ratio = offloaded / rows if rows else 0.0
-
-        return {
-            "config": config.config_id,
-            "decision_method": config.decision_method,
-            "offloading_strategy": config.offloading_strategy,
-            "controller_batch_size": config.controller_batch_size,
-            "rows": rows,
-            "offloaded_samples": offloaded,
-            "offload_ratio": offload_ratio,
-            "offload_transmissions": transmissions,
-            "average_offload_batch_size": average_offload_batch,
-            "transmission_reduction_vs_individual_percent": (
-                100.0 * (1.0 - transmissions / offloaded) if offloaded else 0.0
-            ),
-        }
-
     def summary_communication_metrics(
         self, timing: pd.DataFrame, summary_row: dict
     ) -> dict:
@@ -148,7 +121,7 @@ class ThesisMetrics:
         }
 
     def threshold_trajectory_rows(
-        self, config: ThesisConfiguration, timing: pd.DataFrame
+        self, config: BenchmarkConfiguration, timing: pd.DataFrame
     ) -> list[dict]:
         if config.decision_method != "adaptive_threshold":
             return []
@@ -177,7 +150,7 @@ class ThesisMetrics:
         return rows
 
     def offloading_distribution_row(
-        self, config: ThesisConfiguration, timing: pd.DataFrame
+        self, config: BenchmarkConfiguration, timing: pd.DataFrame
     ) -> dict:
         true_class = pd.to_numeric(timing.get("True Class"), errors="coerce")
         sml_prediction = pd.to_numeric(timing.get("SML Prediction"), errors="coerce")
@@ -208,7 +181,7 @@ class ThesisMetrics:
         }
 
     def per_sample_latency_row(
-        self, config: ThesisConfiguration, timing: pd.DataFrame
+        self, config: BenchmarkConfiguration, timing: pd.DataFrame
     ) -> dict:
         offloaded = self.offloaded_mask(timing)
         latency = pd.to_numeric(timing["total_tracked_latency_s"], errors="coerce")
