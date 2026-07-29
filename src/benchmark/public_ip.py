@@ -1,5 +1,4 @@
 import shutil
-from pathlib import Path
 
 import pandas as pd
 import requests
@@ -10,16 +9,6 @@ from .experiment import BenchmarkExperiment
 class PublicIpExperiment(BenchmarkExperiment):
     MODE = "expeca_public_ip_thesis"
     RUN_LABEL = "thesis"
-
-    def __init__(
-        self,
-        config_overrides: dict[str, str],
-        config_output_dir: Path,
-    ):
-        super().__init__(
-            config_overrides=config_overrides,
-            output_dir=config_output_dir,
-        )
 
     def post_process_results(self) -> pd.DataFrame:
         self.analysis_dir.mkdir(parents=True, exist_ok=True)

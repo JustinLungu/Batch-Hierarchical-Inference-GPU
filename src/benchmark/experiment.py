@@ -35,7 +35,9 @@ class BenchmarkExperiment:
         output_dir: Path,
     ):
         os.chdir(REPO_ROOT)
-        self.config = self.load_config()
+        self.config: dict[str, str] = {}
+        for config_file in (DEFAULT_CONFIG_FILE, CONFIG_FILE):
+            self.config.update(load_env_file(config_file))
         if config_overrides:
             self.config.update(config_overrides)
         self.edge_device_host = require_config(self.config, "EDGE_DEVICE_IP")
@@ -62,15 +64,6 @@ class BenchmarkExperiment:
             timing_results_csv=self.timing_results_csv,
             run_metadata=self.result_metadata(),
         )
-
-    def config_files(self) -> list[Path]:
-        return [DEFAULT_CONFIG_FILE, CONFIG_FILE]
-
-    def load_config(self) -> dict[str, str]:
-        config: dict[str, str] = {}
-        for config_file in self.config_files():
-            config.update(load_env_file(config_file))
-        return config
 
     def parse_controller_max_samples(self) -> int | None:
         raw_value = os.environ.get(

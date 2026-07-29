@@ -15,7 +15,14 @@ from .config import (
     print_dry_run,
     validate_assets,
 )
-from .metrics import BenchmarkMetrics
+from .metrics import (
+    accuracy_metrics,
+    latency_breakdown_row,
+    offloading_distribution_row,
+    per_sample_latency_row,
+    summary_communication_metrics,
+    threshold_trajectory_rows,
+)
 from .plots import BenchmarkPlotter
 from .public_ip import PublicIpExperiment
 from .report import BenchmarkReportWriter
@@ -52,7 +59,6 @@ class BenchmarkRunner:
         self.summary_md = self.output_dir / "summary.md"
         self.metadata_json = self.output_dir / RUN_METADATA_FILENAME
         self.plots_dir = self.output_dir / "plots"
-        self.metrics = BenchmarkMetrics()
 
     def run(self) -> int:
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -95,7 +101,7 @@ class BenchmarkRunner:
                 config_overrides=benchmark_config.overrides(
                     self.benchmark_defaults, self.sample_limit
                 ),
-                config_output_dir=config_output_dir,
+                output_dir=config_output_dir,
             )
             try:
                 experiment.start_services()
@@ -116,18 +122,18 @@ class BenchmarkRunner:
                     "fixed_threshold_value": float(
                         benchmark_config.fixed_threshold_value
                     ),
-                    **self.metrics.accuracy_metrics(timing),
-                    **self.metrics.summary_communication_metrics(timing, row),
+                    **accuracy_metrics(timing),
+                    **summary_communication_metrics(timing, row),
                 }
             )
             rows.append(row)
-            latency_rows.append(self.metrics.latency_breakdown_row(benchmark_config, timing))
-            threshold_rows.extend(self.metrics.threshold_trajectory_rows(benchmark_config, timing))
+            latency_rows.append(latency_breakdown_row(benchmark_config, timing))
+            threshold_rows.extend(threshold_trajectory_rows(benchmark_config, timing))
             offloading_distribution_rows.append(
-                self.metrics.offloading_distribution_row(benchmark_config, timing)
+                offloading_distribution_row(benchmark_config, timing)
             )
             per_sample_latency_rows.append(
-                self.metrics.per_sample_latency_row(benchmark_config, timing)
+                per_sample_latency_row(benchmark_config, timing)
             )
             print()
 
@@ -184,7 +190,7 @@ class BenchmarkRunner:
         latency_rows = []
         for config in self.configurations:
             timing = self.read_config_timing(config.config_id)
-            latency_rows.append(self.metrics.latency_breakdown_row(config, timing))
+            latency_rows.append(latency_breakdown_row(config, timing))
         pd.DataFrame(latency_rows).sort_values("config").to_csv(
             self.latency_breakdown_csv, index=False
         )
@@ -194,7 +200,7 @@ class BenchmarkRunner:
             rows = []
             for config in self.configurations:
                 timing = self.read_config_timing(config.config_id)
-                rows.append(self.metrics.offloading_distribution_row(config, timing))
+                rows.append(offloading_distribution_row(config, timing))
             pd.DataFrame(rows).sort_values("config").to_csv(
                 self.offloading_distribution_csv, index=False
             )
@@ -204,7 +210,7 @@ class BenchmarkRunner:
             rows = []
             for config in self.configurations:
                 timing = self.read_config_timing(config.config_id)
-                rows.append(self.metrics.per_sample_latency_row(config, timing))
+                rows.append(per_sample_latency_row(config, timing))
             pd.DataFrame(rows).sort_values("config").to_csv(
                 self.per_sample_latency_csv, index=False
             )
@@ -257,7 +263,7 @@ class BenchmarkRunner:
             mask = output["thesis_config"].astype(str).str.zfill(3) == config.config_id
             if not mask.any():
                 continue
-            metrics = self.metrics.accuracy_metrics(self.read_config_timing(config.config_id))
+            metrics = accuracy_metrics(self.read_config_timing(config.config_id))
             for column, value in metrics.items():
                 if column in output:
                     output.loc[mask, column] = value

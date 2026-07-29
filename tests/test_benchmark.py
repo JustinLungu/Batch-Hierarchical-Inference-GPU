@@ -10,14 +10,17 @@ SRC_DIR = Path(__file__).resolve().parents[1] / "src"
 sys.path.insert(0, str(SRC_DIR))
 
 from benchmark.config import BenchmarkConfiguration
-from benchmark.metrics import BenchmarkMetrics
+from benchmark.metrics import (
+    accuracy_metrics,
+    latency_breakdown_row,
+    offloading_distribution_row,
+)
 from benchmark.results import BenchmarkResultProcessor
 from benchmark.utils import load_env_file
 
 
 class BenchmarkTests(unittest.TestCase):
     def setUp(self):
-        self.metrics = BenchmarkMetrics()
         self.config = BenchmarkConfiguration(
             config_id="004",
             decision_method="adaptive_threshold",
@@ -105,8 +108,8 @@ class BenchmarkTests(unittest.TestCase):
             }
         )
 
-        accuracy = self.metrics.accuracy_metrics(timing)
-        distribution = self.metrics.offloading_distribution_row(self.config, timing)
+        accuracy = accuracy_metrics(timing)
+        distribution = offloading_distribution_row(self.config, timing)
 
         self.assertAlmostEqual(accuracy["accuracy"], 2.0 / 3.0)
         self.assertAlmostEqual(accuracy["sml_accuracy"], 2.0 / 3.0)
@@ -135,7 +138,7 @@ class BenchmarkTests(unittest.TestCase):
             }
         )
 
-        breakdown = self.metrics.latency_breakdown_row(self.config, timing)
+        breakdown = latency_breakdown_row(self.config, timing)
 
         self.assertAlmostEqual(breakdown["step_1_ed_processing_s"], 0.32)
         self.assertAlmostEqual(breakdown["step_2_ed_offload_buffer_s"], 0.50)
