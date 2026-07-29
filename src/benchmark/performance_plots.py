@@ -215,4 +215,3 @@ class PerformancePlotter:
         figure.savefig(path, dpi=160)
         plt.close(figure)
         return path
-

@@ -230,4 +230,3 @@ class BenchmarkExperiment:
         if self.controller_max_samples is None:
             return "all"
         return str(self.controller_max_samples)
-

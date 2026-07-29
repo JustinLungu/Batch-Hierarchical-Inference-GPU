@@ -162,7 +162,7 @@ sizes in configs `005`-`007` without rerunning ExPECA:
 .venv/bin/python src/analyze_offload_batches.py
 
 # A specific CPU result directory
-.venv/bin/python src/analyze_offload_batches.py results/CPU_thesis_reproduction
+.venv/bin/python src/analyze_offload_batches.py results/thesis_reproduction
 ```
 
 The analysis reports request time, per-image time, effective throughput,

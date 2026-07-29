@@ -186,4 +186,3 @@ def per_sample_latency_row(
         "offloaded_samples_s": series_mean(latency[offloaded]),
         "not_offloaded_samples_s": series_mean(latency[~offloaded]),
     }
-

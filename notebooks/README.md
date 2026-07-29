@@ -106,4 +106,3 @@ should be released. Do not delete unrelated containers or leases.
   latency results are not directly interchangeable.
 - Notebook outputs can contain project names, public IPs, resource IDs, and
   logs. Clear outputs before committing notebook changes.
-

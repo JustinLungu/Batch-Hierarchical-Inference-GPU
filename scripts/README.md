@@ -85,6 +85,6 @@ docs/thesis_reproduction.md
 The main command is:
 
 ```bash
-python src/run_benchmark.py --dry-run
-python src/run_benchmark.py
+.venv/bin/python src/run_benchmark.py --dry-run
+.venv/bin/python src/run_benchmark.py
 ```

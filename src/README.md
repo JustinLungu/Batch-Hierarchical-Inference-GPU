@@ -3,14 +3,14 @@
 Run the CPU/GPU benchmark against already-running ExPECA public-IP containers:
 
 ```bash
-python src/run_benchmark.py
+.venv/bin/python src/run_benchmark.py
 ```
 
 Preview the resolved configurations or regenerate plots without rerunning ExPECA:
 
 ```bash
-python src/run_benchmark.py --dry-run
-python src/run_benchmark.py --plot-only
+.venv/bin/python src/run_benchmark.py --dry-run
+.venv/bin/python src/run_benchmark.py --plot-only
 ```
 
 The benchmark reads `config/defaults.env`, `config/experiment.env`,
@@ -20,7 +20,7 @@ written to the directory selected by `THESIS_OUTPUT_DIR`.
 Analyze actual server batch sizes in an existing CPU or GPU result directory:
 
 ```bash
-python src/analyze_offload_batches.py [results-directory]
+.venv/bin/python src/analyze_offload_batches.py [results-directory]
 ```
 
 ## Packages
