@@ -75,6 +75,10 @@ class OffloadBatchAnalyzerTests(unittest.TestCase):
         self.assertAlmostEqual(summary.loc[1, "response_time_median_s"], 5.0)
         self.assertAlmostEqual(summary.loc[1, "per_image_time_mean_s"], 2.5)
         self.assertAlmostEqual(
+            summary.loc[1, "per_image_time_std_s"],
+            np.std([2.0, 3.0], ddof=1),
+        )
+        self.assertAlmostEqual(
             summary.loc[1, "throughput_median_samples_s"],
             np.median([2.0 / 4.0, 2.0 / 6.0]),
         )

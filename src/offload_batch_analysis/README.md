@@ -90,14 +90,16 @@ helpers shared by the analyzer.
 
 ### `plots.py`
 
-Creates three comparisons against actual server batch size:
+Creates three focused research views:
 
-- total server response time;
-- server time per image;
-- effective server throughput.
+- the distribution of actual offloaded batch sizes produced by each config;
+- mean server response time with 95% confidence intervals and a fitted trend;
+- mean server time per image, showing whether larger batches improve or reduce
+  processing efficiency.
 
-Scatter points represent individual server requests. Lines represent grouped
-medians, and shaded regions represent the 25th-75th percentile range.
+The response-time boundary is server arrival to result send. The plots use
+grouped means rather than raw request clouds, so configurations `005`-`007`
+remain readable despite their different batch-size ranges.
 
 ## Outputs
 
@@ -121,8 +123,8 @@ The package writes:
 - A positive response-time correlation means larger batches take longer in
   total.
 - A negative per-image-time correlation means batching reduces cost per image.
-- A positive throughput correlation means the server processes more images per
-  second as the batch grows.
+- The fitted response-time slope estimates the additional server time per
+  offloaded image.
 
 Correlation alone does not prove causation. Sparse batch sizes, warm-up,
 micro-batch splitting, GPU contention, and outliers can all affect the
