@@ -62,6 +62,7 @@ def analyze(results_dir: Path) -> Path:
     plots = OffloadBatchPlotter(output_dir / "plots").write_plots(
         all_measurements,
         grouped_summary,
+        trends,
     )
 
     print(f"Analyzed offload batches from: {results_dir}")
