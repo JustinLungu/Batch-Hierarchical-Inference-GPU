@@ -43,35 +43,19 @@ class PerformancePlotter:
         return path
 
     def write_latency_breakdown_plot(self, plt, latency: pd.DataFrame) -> Path:
-        step_columns = [
-            "step_1_ed_processing_s",
-            "step_2_ed_offload_buffer_s",
-            "step_3_ed_to_es_communication_s",
-            "step_4_es_processing_s",
-            "step_5_es_to_ed_communication_s",
-            "step_6_ed_result_saving_s",
-        ]
-        labels = [
-            "Step 1: ED Processing",
-            "Step 2: ED Offload Buffer",
-            "Step 3: ED to ES Communication",
-            "Step 4: ES Processing",
-            "Step 5: ES to ED Communication",
-            "Step 6: ED Result Saving",
-        ]
-        colors = [
-            "#1f77b4",
-            "#ff7f0e",
-            "#2ca02c",
-            "#d62728",
-            "#9467bd",
-            "#8c564b",
-        ]
+        steps = (
+            ("step_1_ed_processing_s", "Step 1: ED Processing", "#1f77b4"),
+            ("step_2_ed_offload_buffer_s", "Step 2: ED Offload Buffer", "#ff7f0e"),
+            ("step_3_ed_to_es_communication_s", "Step 3: ED to ES Communication", "#2ca02c"),
+            ("step_4_es_processing_s", "Step 4: ES Processing", "#d62728"),
+            ("step_5_es_to_ed_communication_s", "Step 5: ES to ED Communication", "#9467bd"),
+            ("step_6_ed_result_saving_s", "Step 6: ED Result Saving", "#8c564b"),
+        )
 
         figure, axis = plt.subplots(figsize=(11, 7))
         bottoms = pd.Series([0.0] * len(latency))
         x_values = latency["config"].tolist()
-        for column, label, color in zip(step_columns, labels, colors):
+        for column, label, color in steps:
             values = pd.to_numeric(latency[column], errors="coerce").fillna(0.0)
             bars = axis.bar(x_values, values, bottom=bottoms, label=label, color=color)
             for bar_index, bar in enumerate(bars):
